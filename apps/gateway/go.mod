@@ -1,6 +1,6 @@
 module github.com/kyros-praxis/gateway
 
-go 1.22
+go 1.24.0
 
 require (
 	github.com/go-chi/chi/v5 v5.1.0
@@ -9,10 +9,17 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.1
+	github.com/pquerna/otp v1.5.0
+	github.com/redis/go-redis/v9 v9.17.2
 	golang.org/x/crypto v0.28.0
+	golang.org/x/oauth2 v0.34.0
 )
 
 require (
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
+	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect

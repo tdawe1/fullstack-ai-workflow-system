@@ -24,7 +24,8 @@ type Config struct {
 	JWTRefreshExpireDays int
 
 	// Redis
-	RedisURL string
+	RedisURL        string
+	SessionTTLHours int
 
 	// CORS
 	CORSAllowOrigins []string
@@ -38,13 +39,29 @@ type Config struct {
 	// LLM Providers
 	ModelProvider string
 	ModelName     string
+
+	// OAuth - Google
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRedirectURL  string
+
+	// OAuth - GitHub
+	GitHubClientID     string
+	GitHubClientSecret string
+	GitHubRedirectURL  string
+
+	// MFA
+	MFAIssuer string
 }
 
 // Load reads configuration from environment variables with defaults.
 func Load() *Config {
+	port := getEnv("PORT", "8001")
+	baseURL := getEnv("BASE_URL", "http://localhost:"+port)
+
 	return &Config{
 		// Server
-		Port:        getEnv("PORT", "8001"),
+		Port:        port,
 		Environment: getEnv("KYROS_ENV", "dev"),
 		Debug:       getEnvBool("DEBUG", false),
 
@@ -57,7 +74,8 @@ func Load() *Config {
 		JWTRefreshExpireDays: getEnvInt("JWT_REFRESH_EXPIRE_DAYS", 7),
 
 		// Redis
-		RedisURL: getEnv("REDIS_URL", ""),
+		RedisURL:        getEnv("REDIS_URL", ""),
+		SessionTTLHours: getEnvInt("SESSION_TTL_HOURS", 168), // 7 days
 
 		// CORS
 		CORSAllowOrigins: getEnvList("CORS_ALLOW_ORIGINS", []string{"http://localhost:3000"}),
@@ -71,6 +89,19 @@ func Load() *Config {
 		// LLM Providers
 		ModelProvider: getEnv("MODEL_PROVIDER", "openrouter"),
 		ModelName:     getEnv("MODEL_NAME", "gpt-4o-mini"),
+
+		// OAuth - Google
+		GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
+		GoogleRedirectURL:  getEnv("GOOGLE_REDIRECT_URL", baseURL+"/auth/oauth/google/callback"),
+
+		// OAuth - GitHub
+		GitHubClientID:     getEnv("GITHUB_CLIENT_ID", ""),
+		GitHubClientSecret: getEnv("GITHUB_CLIENT_SECRET", ""),
+		GitHubRedirectURL:  getEnv("GITHUB_REDIRECT_URL", baseURL+"/auth/oauth/github/callback"),
+
+		// MFA
+		MFAIssuer: getEnv("MFA_ISSUER", "FullstackAIWorkflow"),
 	}
 }
 
