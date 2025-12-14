@@ -88,7 +88,10 @@ if FEATURES_ENABLED:
 # Include routers
 app.include_router(auth.router)
 app.include_router(auth_refresh.router)
-app.include_router(auth_ws.router)
+# SECURITY: Web terminal disabled until sandboxed in container
+# The PTY terminal gives authenticated users a bash shell with API privileges
+# See: https://github.com/tdawe1/fullstack-ai-workflow-system/security
+# app.include_router(auth_ws.router)
 app.include_router(projects.router)
 app.include_router(batch_runs.router)
 app.include_router(memory.router)

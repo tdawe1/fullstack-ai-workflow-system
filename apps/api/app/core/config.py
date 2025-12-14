@@ -73,7 +73,33 @@ class Settings(BaseSettings):
     
     # Workflow Settings
     MAX_CRITIC_ITERATIONS: int = Field(default=3, description="Maximum critic feedback iterations")
+    
+    def validate_production_config(self) -> None:
+        """Validate security configuration for production environments.
+        
+        Call this at startup to ensure critical security settings are configured.
+        
+        Raises:
+            RuntimeError: If security configuration is invalid
+        """
+        if self.KYROS_ENV != "production":
+            return
+        
+        # JWT_SECRET_KEY is required in production
+        if not self.JWT_SECRET_KEY or len(self.JWT_SECRET_KEY) < 32:
+            raise RuntimeError(
+                "CRITICAL: JWT_SECRET_KEY must be set and at least 32 characters in production. "
+                "Generate with: openssl rand -hex 32"
+            )
+        
+        # CORS cannot be wildcard in production
+        if "*" in self.CORS_ALLOW_ORIGINS or "http://localhost:3000" in self.CORS_ALLOW_ORIGINS:
+            import logging
+            logging.getLogger(__name__).warning(
+                "WARNING: CORS_ALLOW_ORIGINS contains localhost - update for production"
+            )
 
 
 settings = Settings()
+
 
