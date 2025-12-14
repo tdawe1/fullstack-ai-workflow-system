@@ -6,6 +6,8 @@ A production-ready platform for orchestrating AI agents to generate, review, and
 
 ## Architecture Overview
 
+![Architecture Diagram](docs/architecture.png)
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         Frontend (React)                         │
