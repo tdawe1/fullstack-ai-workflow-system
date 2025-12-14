@@ -56,7 +56,10 @@ Unified provider abstraction supporting:
 - **Event-Driven Architecture**: Pub/sub for agent coordination
 
 ### Security & Performance
-- JWT authentication with refresh token rotation
+- **JWT Authentication** with refresh token rotation
+- **OAuth 2.0** with Google and GitHub providers
+- **Multi-Factor Authentication** (TOTP) with backup codes
+- **Session Management** via Redis with device tracking
 - Rate limiting with sliding window algorithm
 - Connection pooling for database efficiency
 - Graceful shutdown with request draining
