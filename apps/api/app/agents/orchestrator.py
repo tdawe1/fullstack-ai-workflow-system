@@ -1,11 +1,8 @@
 """
-Planner Agent: Analyzes user prompts and creates structured specifications.
+Orchestrator Agent: Coordinates execution layer agents based on supervisory plan.
 
-PRD Requirements:
-- "Planner Agent refines the user's prompt into a structured plan"
-- "outlines the components needed"
-- "creates a pseudo-design document"
-- "user can review and approve before coding starts"
+Receives plan from the supervisory layer (Architect/Planner) and orchestrates
+the execution agents (Coder, Tester, Reviewer) to implement each task.
 """
 
 import logging
@@ -22,9 +19,9 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def create_planner_agent(llm_config: Optional[Dict] = None) -> Optional[Agent]:
+def create_orchestrator_agent(llm_config: Optional[Dict] = None) -> Optional[Agent]:
     """
-    Create agent that analyzes prompts and creates specifications.
+    Create the Orchestrator agent for coordinating execution.
     
     Args:
         llm_config: Optional LLM configuration override
@@ -33,21 +30,19 @@ def create_planner_agent(llm_config: Optional[Dict] = None) -> Optional[Agent]:
         Agent instance or None if CrewAI not available
     """
     if not CREWAI_AVAILABLE:
-        logger.warning("CrewAI not available, cannot create planner agent")
+        logger.warning("CrewAI not available, cannot create orchestrator agent")
         return None
     
     return Agent(
-        role="Software Architect",
-        goal="Analyze user requirements and create detailed, actionable specifications",
-        backstory="""You are an experienced software architect with 15+ years of 
-        experience. You excel at understanding project requirements, asking clarifying 
-        questions when needed, and breaking down complex projects into structured, 
-        implementable plans. You think about scalability, maintainability, and best 
-        practices. You create specifications that developers can immediately use to 
-        start coding.""",
+        role="Execution Orchestrator",
+        goal="Coordinate execution agents to implement tasks according to the plan",
+        backstory="""You are a senior technical lead who excels at coordinating 
+        development teams. You receive plans from the Architect and Planner, then 
+        orchestrate Coder, Tester, and Reviewer agents to implement each task. 
+        You ensure work flows smoothly between agents, resolve blockers, and 
+        maintain quality standards throughout execution.""",
         verbose=True,
-        allow_delegation=False,
-        # Tools can be added here (e.g., web search, documentation lookup)
+        allow_delegation=True,  # Can delegate to execution agents
         tools=[],
     )
 
@@ -144,7 +139,7 @@ def create_planning_task(user_prompt: str, agent: Agent) -> Optional[Task]:
     )
 
 
-async def run_planner(
+async def run_orchestrator(
     user_prompt: str, 
     project_id: Optional[str] = None,
     llm_config: Optional[Dict] = None
@@ -179,10 +174,10 @@ async def run_planner(
         }
     
     try:
-        logger.info(f"Starting planner agent for project: {project_id}")
+        logger.info(f"Starting orchestrator agent for project: {project_id}")
         
         # Create agent and task
-        agent = create_planner_agent(llm_config)
+        agent = create_orchestrator_agent(llm_config)
         task = create_planning_task(user_prompt, agent)
         
         # Create crew with single agent
@@ -196,7 +191,7 @@ async def run_planner(
         # Execute
         result = crew.kickoff()
         
-        logger.info(f"Planner agent completed for project: {project_id}")
+        logger.info(f"Orchestrator agent completed for project: {project_id}")
         
         # Parse result
         # Note: CrewAI returns various formats depending on version
@@ -217,7 +212,7 @@ async def run_planner(
         }
         
     except Exception as e:
-        logger.error(f"Error in planner agent: {e}", exc_info=True)
+        logger.error(f"Error in orchestrator agent: {e}", exc_info=True)
         return {
             "status": "failed",
             "error": str(e),
