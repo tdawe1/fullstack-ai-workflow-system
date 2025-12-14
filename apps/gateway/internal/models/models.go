@@ -138,6 +138,21 @@ type ErrorResponse struct {
 	Details string `json:"details,omitempty"`
 }
 
+// ValidationError represents a validation error for user-friendly messages.
+type ValidationError struct {
+	message string
+}
+
+// NewValidationError creates a new ValidationError.
+func NewValidationError(message string) *ValidationError {
+	return &ValidationError{message: message}
+}
+
+// Error implements the error interface.
+func (v *ValidationError) Error() string {
+	return v.message
+}
+
 // DashboardResponse contains project dashboard data.
 type DashboardResponse struct {
 	Project        Project                  `json:"project"`

@@ -54,6 +54,9 @@ func (h *Handler) SetSessions(sessions *auth.SessionManager) {
 
 // ---- Helper Functions ----
 
+// Maximum request body size (1MB)
+const maxRequestBodySize = 1 << 20
+
 func (h *Handler) writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -68,10 +71,57 @@ func (h *Handler) writeError(w http.ResponseWriter, status int, err string, mess
 }
 
 func (h *Handler) decodeAndValidate(r *http.Request, v interface{}) error {
+	// Limit request body size to prevent DOS attacks
+	r.Body = http.MaxBytesReader(nil, r.Body, maxRequestBodySize)
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
 		return err
 	}
 	return h.validate.Struct(v)
+}
+
+// validatePassword enforces password security requirements.
+// Requirements: 8+ chars, uppercase, lowercase, number, special char.
+func validatePassword(password string) error {
+	if len(password) < 8 {
+		return models.NewValidationError("password must be at least 8 characters")
+	}
+
+	var (
+		hasUpper   bool
+		hasLower   bool
+		hasNumber  bool
+		hasSpecial bool
+	)
+
+	for _, char := range password {
+		switch {
+		case 'A' <= char && char <= 'Z':
+			hasUpper = true
+		case 'a' <= char && char <= 'z':
+			hasLower = true
+		case '0' <= char && char <= '9':
+			hasNumber = true
+		case char == '!' || char == '@' || char == '#' || char == '$' || char == '%' ||
+			char == '^' || char == '&' || char == '*' || char == '(' || char == ')' ||
+			char == '-' || char == '_' || char == '+' || char == '=':
+			hasSpecial = true
+		}
+	}
+
+	if !hasUpper {
+		return models.NewValidationError("password must contain at least one uppercase letter")
+	}
+	if !hasLower {
+		return models.NewValidationError("password must contain at least one lowercase letter")
+	}
+	if !hasNumber {
+		return models.NewValidationError("password must contain at least one number")
+	}
+	if !hasSpecial {
+		return models.NewValidationError("password must contain at least one special character (!@#$%^&*()-_+=)")
+	}
+
+	return nil
 }
 
 // ---- Health ----
@@ -107,6 +157,12 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing, _ := h.db.GetUserByUsername(r.Context(), req.Username); existing != nil {
 		h.writeError(w, http.StatusBadRequest, "username_exists", "Username already registered")
+		return
+	}
+
+	// Validate password strength
+	if err := validatePassword(req.Password); err != nil {
+		h.writeError(w, http.StatusBadRequest, "weak_password", err.Error())
 		return
 	}
 

@@ -8,26 +8,73 @@ import (
 	"time"
 )
 
-// RateLimiter implements a simple in-memory rate limiter.
+// RateLimiter implements a simple in-memory rate limiter with cleanup.
 type RateLimiter struct {
 	requests       map[string][]time.Time
-	mu             sync.Mutex
+	mu             sync.RWMutex
 	requestsPerMin int
+	stopCleanup    chan struct{}
 }
 
-// NewRateLimiter creates a new rate limiter.
+// NewRateLimiter creates a new rate limiter with periodic cleanup.
 func NewRateLimiter(requestsPerMin int) *RateLimiter {
-	return &RateLimiter{
+	rl := &RateLimiter{
 		requests:       make(map[string][]time.Time),
 		requestsPerMin: requestsPerMin,
+		stopCleanup:    make(chan struct{}),
 	}
+	// Start cleanup goroutine
+	go rl.cleanupLoop()
+	return rl
+}
+
+// cleanupLoop periodically removes stale entries to prevent memory leaks.
+func (rl *RateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			rl.cleanup()
+		case <-rl.stopCleanup:
+			return
+		}
+	}
+}
+
+// cleanup removes IPs with no recent requests.
+func (rl *RateLimiter) cleanup() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	cutoff := time.Now().Add(-time.Minute)
+	for ip, times := range rl.requests {
+		// Filter to only recent requests
+		filtered := times[:0]
+		for _, t := range times {
+			if t.After(cutoff) {
+				filtered = append(filtered, t)
+			}
+		}
+		if len(filtered) == 0 {
+			delete(rl.requests, ip)
+		} else {
+			rl.requests[ip] = filtered
+		}
+	}
+}
+
+// Stop stops the cleanup goroutine.
+func (rl *RateLimiter) Stop() {
+	close(rl.stopCleanup)
 }
 
 // Middleware returns an HTTP middleware that rate limits requests.
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip rate limiting for health checks
-		if r.URL.Path == "/health" {
+		if r.URL.Path == "/health" || r.URL.Path == "/metrics" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -41,7 +88,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		now := time.Now()
 		cutoff := now.Add(-time.Minute)
 
-		// Clean old requests
+		// Clean old requests for this IP
 		reqs := rl.requests[clientIP]
 		filtered := reqs[:0]
 		for _, t := range reqs {
@@ -55,6 +102,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		if len(filtered) >= rl.requestsPerMin {
 			rl.mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusTooManyRequests)
 			w.Write([]byte(`{"error":"rate_limit_exceeded","message":"Too many requests"}`))
 			return

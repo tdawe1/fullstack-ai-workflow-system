@@ -127,7 +127,7 @@ func (db *DB) CreateProject(ctx context.Context, project *models.Project) error 
 	return err
 }
 
-// GetProjectByID retrieves a project by ID.
+// GetProjectByID retrieves a project by ID (admin only, no ownership check).
 func (db *DB) GetProjectByID(ctx context.Context, id uuid.UUID) (*models.Project, error) {
 	query := `
 		SELECT id, user_id, name, description, status, created_at, updated_at
@@ -135,6 +135,24 @@ func (db *DB) GetProjectByID(ctx context.Context, id uuid.UUID) (*models.Project
 	`
 	var project models.Project
 	err := db.pool.QueryRow(ctx, query, id).Scan(
+		&project.ID, &project.UserID, &project.Name, &project.Description,
+		&project.Status, &project.CreatedAt, &project.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &project, nil
+}
+
+// GetProjectByIDForUser retrieves a project by ID with ownership verification.
+// Returns an error if the project doesn't belong to the specified user.
+func (db *DB) GetProjectByIDForUser(ctx context.Context, id, userID uuid.UUID) (*models.Project, error) {
+	query := `
+		SELECT id, user_id, name, description, status, created_at, updated_at
+		FROM projects WHERE id = $1 AND user_id = $2
+	`
+	var project models.Project
+	err := db.pool.QueryRow(ctx, query, id, userID).Scan(
 		&project.ID, &project.UserID, &project.Name, &project.Description,
 		&project.Status, &project.CreatedAt, &project.UpdatedAt,
 	)

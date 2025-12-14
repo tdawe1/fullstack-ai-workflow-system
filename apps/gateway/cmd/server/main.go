@@ -33,6 +33,24 @@ func main() {
 		"port", cfg.Port,
 	)
 
+	// Production security validation
+	if cfg.IsProduction() {
+		log.Info("Production mode - validating security configuration...")
+
+		// Enforce JWT secret
+		if cfg.JWTSecretKey == "" || len(cfg.JWTSecretKey) < 32 || cfg.JWTSecretKey == "dev-secret-key-change-in-production" {
+			log.Error("CRITICAL: JWT_SECRET_KEY must be set to a secure value (min 32 chars) in production")
+			os.Exit(1)
+		}
+
+		// Warn about debug mode
+		if cfg.Debug {
+			log.Warn("WARNING: DEBUG mode is enabled in production")
+		}
+
+		log.Info("Production security validation passed ✓")
+	}
+
 	// Connect to database
 	database, err := db.New(cfg.DatabaseURL)
 	if err != nil {
