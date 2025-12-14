@@ -1,0 +1,25 @@
+name: spec_to_tasks
+description: Convert a plan/spec document into structured tasks
+model:
+  provider: ${MODEL_PROVIDER:-openrouter}
+  name: ${MODEL_NAME:-gpt-4o-mini}
+  # Provider-specific model overrides
+  vertex_model: gemini-1.5-pro
+  bedrock_model: anthropic.claude-3-sonnet-20240229-v1:0
+  azure_model: gpt-4o
+inputs:
+  - name: plan_path
+    required: false
+  - name: prompt
+    required: false
+roles:
+  - name: planner
+    goal: extract actionable tasks from the plan
+    prompt: spec_to_tasks.md
+tools:
+  - name: emit_tasks
+    description: Emits structured tasks as JSON
+    args:
+      - name: tasks
+        type: json
+
