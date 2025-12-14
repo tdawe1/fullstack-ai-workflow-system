@@ -1,6 +1,6 @@
-# Kyros Praxis
+# Fullstack AI Workflow System
 
-> Multi-Agent AI Orchestration Platform
+> Multi-Agent AI Orchestration Platform for Code Generation & Review
 
 A production-ready platform for orchestrating AI agents to generate, review, and refine code through a structured workflow pipeline.
 
