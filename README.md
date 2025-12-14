@@ -21,12 +21,19 @@ A production-ready platform for orchestrating AI agents to generate, review, and
                           │ HTTP
 ┌─────────────────────────▼───────────────────────────────────────┐
 │                    Worker Service (Python)                       │
-│                 CrewAI Multi-Agent Orchestration                 │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐                   │
-│  │ Planner  │───▶│  Coder   │───▶│  Tester  │                   │
-│  │  Agent   │    │  Agent   │    │  Agent   │                   │
-│  └──────────┘    └──────────┘    └──────────┘                   │
-│              Iterative Refinement Loop                           │
+│                                                                  │
+│  SUPERVISORY   ┌──────────┐  ⟷  ┌──────────┐                   │
+│  LAYER         │ Architect│     │ Planner  │   iterate until    │
+│                └────┬─────┘     └────┬─────┘   consensus         │
+│                     │                │                           │
+│  EXECUTION    ┌─────▼────┐  ┌───────▼──┐  ┌──────────┐         │
+│  LAYER        │Orchestrat│─▶│  Coder   │─▶│  Tester  │         │
+│               └──────────┘  └──────────┘  └────┬─────┘         │
+│                                                │                 │
+│  INTEGRATION  ┌────────────────────────────────▼───────────────┐│
+│  LAYER        │             Integrator                         ││
+│               │     (consults Architect/Planner for merges)    ││
+│               └────────────────────────────────────────────────┘│
 └─────────────────────────┬───────────────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────────────┐
@@ -37,11 +44,13 @@ A production-ready platform for orchestrating AI agents to generate, review, and
 
 ## Key Features
 
-### Multi-Agent Workflow Pipeline
-- **Planner Agent**: Converts user prompts into structured specifications
+### Hierarchical Multi-Agent Pipeline
+- **Architect Agent**: High-level system design and technology decisions
+- **Planner Agent**: Task breakdown and dependency ordering (iterates with Architect)
+- **Orchestrator Agent**: Coordinates execution agents per task
 - **Coder Agent**: Generates implementation based on approved specs
 - **Tester Agent**: Reviews code quality, security, and test coverage
-- **Iterative Refinement**: Automatic retry with feedback integration
+- **Integrator Agent**: Implements merges, consults supervisory agents
 
 ### Multi-Cloud LLM Integration
 Unified provider abstraction supporting:
