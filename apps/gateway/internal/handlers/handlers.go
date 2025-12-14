@@ -18,22 +18,38 @@ import (
 
 // Handler holds dependencies for HTTP handlers.
 type Handler struct {
-	cfg      *config.Config
-	db       *db.DB
-	auth     *auth.Auth
-	validate *validator.Validate
-	log      *slog.Logger
+	cfg         *config.Config
+	db          *db.DB
+	auth        *auth.Auth
+	oauth       *auth.OAuthManager
+	oauthStates *auth.OAuthStateStore
+	sessions    *auth.SessionManager
+	validate    *validator.Validate
+	log         *slog.Logger
 }
 
 // New creates a new Handler.
 func New(cfg *config.Config, database *db.DB, authService *auth.Auth, log *slog.Logger) *Handler {
 	return &Handler{
-		cfg:      cfg,
-		db:       database,
-		auth:     authService,
-		validate: validator.New(),
-		log:      log,
+		cfg:         cfg,
+		db:          database,
+		auth:        authService,
+		oauth:       nil, // Set via SetOAuth
+		oauthStates: auth.NewOAuthStateStore(),
+		sessions:    nil, // Set via SetSessions
+		validate:    validator.New(),
+		log:         log,
 	}
+}
+
+// SetOAuth sets the OAuth manager.
+func (h *Handler) SetOAuth(oauth *auth.OAuthManager) {
+	h.oauth = oauth
+}
+
+// SetSessions sets the session manager.
+func (h *Handler) SetSessions(sessions *auth.SessionManager) {
+	h.sessions = sessions
 }
 
 // ---- Helper Functions ----

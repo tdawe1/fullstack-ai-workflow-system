@@ -45,8 +45,35 @@ func main() {
 	// Initialize auth service
 	authService := auth.New(cfg, database)
 
+	// Initialize OAuth manager
+	oauthManager := auth.NewOAuthManager(auth.OAuthConfig{
+		GoogleClientID:     cfg.GoogleClientID,
+		GoogleClientSecret: cfg.GoogleClientSecret,
+		GoogleRedirectURL:  cfg.GoogleRedirectURL,
+		GitHubClientID:     cfg.GitHubClientID,
+		GitHubClientSecret: cfg.GitHubClientSecret,
+		GitHubRedirectURL:  cfg.GitHubRedirectURL,
+	})
+	if len(oauthManager.ListProviders()) > 0 {
+		log.Info("oauth providers configured", "providers", oauthManager.ListProviders())
+	}
+
+	// Initialize session manager (optional, requires Redis)
+	var sessionManager *auth.SessionManager
+	if cfg.RedisURL != "" {
+		var err error
+		sessionManager, err = auth.NewSessionManager(cfg.RedisURL, time.Duration(cfg.SessionTTLHours)*time.Hour)
+		if err != nil {
+			log.Warn("session manager disabled", "error", err)
+		} else {
+			log.Info("session manager connected to Redis")
+		}
+	}
+
 	// Initialize handlers
 	h := handlers.New(cfg, database, authService, log)
+	h.SetOAuth(oauthManager)
+	h.SetSessions(sessionManager)
 
 	// Initialize router
 	r := chi.NewRouter()
@@ -58,7 +85,7 @@ func main() {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSAllowOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Session-ID"},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
@@ -69,9 +96,26 @@ func main() {
 
 	// Auth routes
 	r.Route("/auth", func(r chi.Router) {
+		// Basic auth
 		r.Post("/register", h.Register)
 		r.Post("/login", h.Login)
 		r.With(authService.RequireAuth).Get("/me", h.GetMe)
+
+		// OAuth routes
+		r.Get("/oauth/providers", h.ListOAuthProviders)
+		r.Get("/oauth/{provider}", h.OAuthStart)
+		r.Get("/oauth/{provider}/callback", h.OAuthCallback)
+
+		// MFA routes
+		r.With(authService.RequireAuth).Post("/mfa/setup", h.MFASetup)
+		r.With(authService.RequireAuth).Post("/mfa/enable", h.MFAEnable)
+		r.Post("/mfa/verify", h.MFAVerify)
+		r.With(authService.RequireAuth).Post("/mfa/disable", h.MFADisable)
+
+		// Session routes
+		r.With(authService.RequireAuth).Get("/sessions", h.ListSessions)
+		r.With(authService.RequireAuth).Delete("/sessions/{id}", h.RevokeSession)
+		r.With(authService.RequireAuth).Delete("/sessions", h.RevokeAllSessions)
 	})
 
 	// Project routes
