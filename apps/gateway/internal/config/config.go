@@ -15,6 +15,13 @@ type Config struct {
 	Environment string
 	Debug       bool
 
+	// TLS/HTTPS
+	TLSEnabled  bool
+	TLSCertFile string
+	TLSKeyFile  string
+	TLSAutoLets bool   // Enable Let's Encrypt auto-certificates
+	TLSDomain   string // Domain for Let's Encrypt
+
 	// Database
 	DatabaseURL string
 
@@ -64,6 +71,13 @@ func Load() *Config {
 		Port:        port,
 		Environment: getEnv("KYROS_ENV", "dev"),
 		Debug:       getEnvBool("DEBUG", false),
+
+		// TLS/HTTPS
+		TLSEnabled:  getEnvBool("TLS_ENABLED", false),
+		TLSCertFile: getEnv("TLS_CERT_FILE", ""),
+		TLSKeyFile:  getEnv("TLS_KEY_FILE", ""),
+		TLSAutoLets: getEnvBool("TLS_AUTO_LETSENCRYPT", false),
+		TLSDomain:   getEnv("TLS_DOMAIN", ""),
 
 		// Database
 		DatabaseURL: getEnv("DATABASE_URL", "postgres://kyros:kyros@localhost:5432/kyros?sslmode=disable"),
