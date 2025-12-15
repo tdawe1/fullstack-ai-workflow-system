@@ -37,7 +37,81 @@ async def db_cleanup(apply_migrations):
 
 
 @pytest_asyncio.fixture
+async def db_session():
+    async with AsyncSessionLocal() as session:
+        yield session
+
+
+@pytest_asyncio.fixture
 async def api_client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         yield client
+
+
+@pytest.fixture(autouse=True)
+def mock_llm_agents(monkeypatch):
+    """Mock LLM agents to prevent live API calls."""
+    
+    async def mock_run_planner(*args, **kwargs):
+        return {
+            "status": "completed",
+            "specification": {
+                "purpose": "Mocked purpose",
+                "components": ["mock_comp"],
+                "technology": {"language": "python"},
+                "file_structure": {},
+                "dependencies": []
+            },
+            "simulation": True
+        }
+    
+    async def mock_run_coder(*args, **kwargs):
+        return {
+            "status": "completed",
+            "code_output": {
+                "files": [
+                    {"path": "mock.py", "content": "print('mock')"}
+                ]
+            },
+            "files": [
+                {"path": "mock.py", "content": "print('mock')"}
+            ],
+            "simulation": True
+        }
+
+    async def mock_run_tester(*args, **kwargs):
+        return {
+            "status": "completed",
+            "test_output": {
+                "review": {"matches_spec": True, "issues": []},
+                "tests": []
+            },
+            "review": {"matches_spec": True, "issues": []},
+            "tests": [],
+            "simulation": True
+        }
+
+    async def mock_run_orchestrator(*args, **kwargs):
+        return {
+            "status": "completed",
+            "specification": {
+                "purpose": "Mocked orchestrated purpose",
+                "phases": []
+            },
+            "simulation": True
+        }
+
+    # Patch Source
+    monkeypatch.setattr("app.agents.planner.run_planner", mock_run_planner)
+    monkeypatch.setattr("app.agents.coder.run_coder", mock_run_coder)
+    monkeypatch.setattr("app.agents.tester.run_tester", mock_run_tester)
+    monkeypatch.setattr("app.agents.orchestrator.run_orchestrator", mock_run_orchestrator)
+    
+    # Patch Consumers (Pipeline)
+    # Note: We use setattr on the module object of app.workflows.pipeline
+    # We need to import it here to patch it, or use string path if accessible
+    monkeypatch.setattr("app.workflows.pipeline.run_planner", mock_run_planner)
+    monkeypatch.setattr("app.workflows.pipeline.run_coder", mock_run_coder)
+    monkeypatch.setattr("app.workflows.pipeline.run_tester", mock_run_tester)
+

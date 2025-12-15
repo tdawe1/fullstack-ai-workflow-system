@@ -13,7 +13,9 @@ from ..agents.planner import run_planner, validate_specification
 from ..agents.coder import run_coder, validate_code_output, parse_code_output
 from ..agents.tester import run_tester, parse_test_output, has_blocking_issues
 from ..prompt_processor import prompt_processor
-from ..db.models import Artifact, WorkflowStage
+from ..agents.tester import run_tester, parse_test_output, has_blocking_issues
+from ..prompt_processor import prompt_processor
+from ..db.models import Artifact, WorkflowStage, CrewRun
 from ..db.session import AsyncSessionLocal
 from ..memory.shared_memory import shared_memory
 
@@ -58,6 +60,19 @@ class WorkflowPipeline:
         """
         logger.info(f"Starting multi-agent workflow for project {project_id} (iteration {iteration})")
         workflow_id = str(uuid4())
+        
+        # Create CrewRun record to satisfy Foreign Key constraints
+        try:
+            await self._create_crew_run(workflow_id, project_id, user_prompt)
+        except Exception as e:
+            logger.error(f"Failed to create CrewRun record: {e}")
+            return {
+                "workflow_id": workflow_id,
+                "project_id": project_id,
+                "status": "failed",
+                "stage": "init",
+                "error": f"Failed to initialize workflow: {str(e)}"
+            }
         
         try:
             result = {
@@ -486,6 +501,24 @@ Please update the implementation based on the refinement notes.
             
             await session.commit()
             logger.info(f"Stored {len(code_files)} code files and {len(test_files)} test files")
+
+    async def _create_crew_run(
+        self,
+        workflow_id: str,
+        project_id: str,
+        user_prompt: str
+    ):
+        """Create initial CrewRun record."""
+        async with AsyncSessionLocal() as session:
+            crew_run = CrewRun(
+                id=workflow_id,
+                crew_id="default",
+                status="running",
+                input={"user_prompt": user_prompt, "project_id": project_id},
+                user_id=project_id  # Using project_id as user_id proxy if not provided
+            )
+            session.add(crew_run)
+            await session.commit()
 
 
 # Global instance

@@ -20,7 +20,7 @@ from ..models_multi_agent import (
     TaskResponse,
     TaskUpdate,
 )
-from ..workflows.pipeline_refactored import workflow_pipeline
+from ..workflows.pipeline import workflow_pipeline
 from pydantic import BaseModel
 
 # Import cache utilities
