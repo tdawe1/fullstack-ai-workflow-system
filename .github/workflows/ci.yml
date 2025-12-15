@@ -107,14 +107,14 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build Gateway
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./apps/gateway
           push: false
           tags: kyros-gateway:latest
 
       - name: Build Workers
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./apps/api
           push: false
