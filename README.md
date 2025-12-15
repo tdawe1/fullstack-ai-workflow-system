@@ -202,4 +202,3 @@ MIT
 
 ---
 
-*Built as a solutions architecture portfolio piece demonstrating multi-agent AI orchestration, polyglot microservices, and cloud-native design patterns.*
