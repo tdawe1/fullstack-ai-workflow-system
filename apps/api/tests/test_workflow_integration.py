@@ -138,7 +138,10 @@ class TestWorkflowExecution:
         # Good prompt
         result = await pipeline.execute_workflow(
             project_id="test-123",
-            user_prompt="Build a comprehensive todo application with user authentication, task management, and email notifications using Python FastAPI backend and React frontend"
+            user_prompt=(
+                "Build a comprehensive todo application with user authentication, task management, "
+                "and email notifications using Python FastAPI backend and React frontend"
+            )
         )
         
         # Should pause for approval

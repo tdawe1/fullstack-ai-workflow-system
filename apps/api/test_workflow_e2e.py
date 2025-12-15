@@ -7,7 +7,7 @@ import asyncio
 import aiohttp
 import sys
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict
 
 API_BASE = "http://localhost:8001"
 COLORS = {

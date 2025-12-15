@@ -2,7 +2,7 @@
 Tests for prompt processor module.
 """
 
-import pytest
+
 from app.prompt_processor import PromptProcessor, ValidationResult, PromptRequirements
 
 
@@ -264,7 +264,10 @@ class TestRequirementsExtraction:
     
     def test_detect_multiple_tech_stacks(self):
         """Test detection of mixed technology stacks."""
-        prompt = "Build full-stack app: Python FastAPI backend, React TypeScript frontend, PostgreSQL database, Redis cache"
+        prompt = (
+            "Build full-stack app: Python FastAPI backend, "
+            "React TypeScript frontend, PostgreSQL database, Redis cache"
+        )
         
         reqs = self.processor.extract_requirements(prompt)
         
