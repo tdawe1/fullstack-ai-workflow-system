@@ -13,8 +13,57 @@ from ..db.session import AsyncSessionLocal
 class SharedMemoryService:
     """Service for managing shared memory between agents."""
     
+    
     def __init__(self):
         self._subscribers: Dict[str, List[asyncio.Queue]] = {}
+        self._redis: Optional[Any] = None
+        self._redis_sub_task: Optional[asyncio.Task] = None
+        
+    async def _ensure_redis(self):
+        """Ensure Redis connection is active."""
+        if not self._redis:
+            import redis.asyncio as redis
+            import os
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+            if redis_url:
+                try:
+                    self._redis = redis.from_url(redis_url, decode_responses=True)
+                    # Start subscription task if not running
+                    if not self._redis_sub_task:
+                        self._redis_sub_task = asyncio.create_task(self._redis_subscriber())
+                except Exception as e:
+                    print(f"Failed to connect to Redis: {e}")
+                    self._redis = None
+
+    async def _redis_subscriber(self):
+        """Background task to listen for Redis events."""
+        if not self._redis:
+            return
+            
+        try:
+            pubsub = self._redis.pubsub()
+            await pubsub.subscribe("kyros:events")
+            
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    import json
+                    try:
+                        data = json.loads(message["data"])
+                        # Redistribute to local subscribers
+                        project_id = data.get("project_id")
+                        if project_id and project_id in self._subscribers:
+                            for queue in self._subscribers[project_id]:
+                                try:
+                                    queue.put_nowait(data)
+                                except asyncio.QueueFull:
+                                    pass
+                    except Exception as e:
+                        print(f"Error processing Redis message: {e}")
+        except Exception as e:
+            print(f"Redis subscriber error: {e}")
+        finally:
+            self._redis_sub_task = None
+
     
     async def set(
         self, 
@@ -210,21 +259,30 @@ class SharedMemoryService:
             await session.commit()
             await session.refresh(event)
         
-        # Notify in-memory subscribers
+        # Notify in-memory subscribers (Local)
+        event_data = {
+            "id": event.id,
+            "project_id": project_id,
+            "event_type": event_type,
+            "payload": payload,
+            "published_at": event.published_at.isoformat()
+        }
+        
         if project_id in self._subscribers:
-            event_data = {
-                "id": event.id,
-                "project_id": project_id,
-                "event_type": event_type,
-                "payload": payload,
-                "published_at": event.published_at.isoformat()
-            }
-            
             for queue in self._subscribers[project_id]:
                 try:
                     queue.put_nowait(event_data)
                 except asyncio.QueueFull:
-                    pass  # Skip if queue is full
+                    pass
+        
+        # Publish to Redis (Cross-process)
+        await self._ensure_redis()
+        if self._redis:
+            import json
+            try:
+                await self._redis.publish("kyros:events", json.dumps(event_data))
+            except Exception as e:
+                print(f"Failed to publish to Redis: {e}")  # Skip if queue is full
     
     async def subscribe(
         self, 
@@ -247,6 +305,9 @@ class SharedMemoryService:
         if project_id not in self._subscribers:
             self._subscribers[project_id] = []
         self._subscribers[project_id].append(queue)
+        
+        # Ensure Redis listener is running
+        await self._ensure_redis()
         
         try:
             # First, yield historical events if since_id is provided

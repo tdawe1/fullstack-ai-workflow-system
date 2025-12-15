@@ -15,6 +15,7 @@ import (
 	"github.com/kyros-praxis/gateway/internal/auth"
 	"github.com/kyros-praxis/gateway/internal/config"
 	"github.com/kyros-praxis/gateway/internal/db"
+	"github.com/kyros-praxis/gateway/internal/events"
 	"github.com/kyros-praxis/gateway/internal/models"
 )
 
@@ -29,10 +30,11 @@ type Handler struct {
 	validate    *validator.Validate
 	log         *slog.Logger
 	workerProxy *httputil.ReverseProxy
+	events      *events.Service
 }
 
 // New creates a new Handler.
-func New(cfg *config.Config, database *db.DB, authService *auth.Auth, log *slog.Logger) *Handler {
+func New(cfg *config.Config, database *db.DB, authService *auth.Auth, eventService *events.Service, log *slog.Logger) *Handler {
 	// Initialize worker proxy
 	target, err := url.Parse(cfg.WorkerBaseURL)
 	var proxy *httputil.ReverseProxy
@@ -61,6 +63,7 @@ func New(cfg *config.Config, database *db.DB, authService *auth.Auth, log *slog.
 		validate:    validator.New(),
 		log:         log,
 		workerProxy: proxy,
+		events:      eventService,
 	}
 }
 
@@ -410,6 +413,14 @@ func (h *Handler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		h.log.Error("failed to create task", "error", err)
 		h.writeError(w, http.StatusInternalServerError, "internal_error", "Failed to create task")
 		return
+	}
+
+	// Publish event to Redis for Python workers
+	if h.events != nil {
+		if err := h.events.Publish(r.Context(), projectID.String(), events.EventTypeTaskCreated, task); err != nil {
+			// Don't fail the request if publishing fails, but log it
+			h.log.Error("failed to publish task_created event", "error", err)
+		}
 	}
 
 	h.writeJSON(w, http.StatusCreated, task)

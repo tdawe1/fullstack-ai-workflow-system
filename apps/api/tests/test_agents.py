@@ -3,27 +3,13 @@ Tests for multi-agent system (planner, coder, tester).
 """
 
 import pytest
-from app.agents.planner import (
+import app.agents.planner as planner_agent
+from app.agents.orchestrator import (
     validate_specification,
     extract_key_info,
-    run_planner,
 )
-from app.agents.coder import (
-    parse_code_output,
-    validate_code_output,
-    count_code_stats,
-    get_file_tree,
-    run_coder,
-)
-from app.agents.tester import (
-    parse_test_output,
-    validate_test_output,
-    count_issues_by_severity,
-    has_blocking_issues,
-    generate_test_summary,
-    extract_critical_issues,
-    run_tester,
-)
+import app.agents.coder as coder_agent
+import app.agents.tester as tester_agent
 
 
 # Planner Agent Tests
@@ -123,7 +109,7 @@ class TestPlannerHelpers:
 @pytest.mark.asyncio
 async def test_run_planner_simulation_mode():
     """Test planner runs in simulation mode when CrewAI unavailable."""
-    result = await run_planner("Test prompt", project_id="test-123")
+    result = await planner_agent.run_planner("Test prompt", project_id="test-123")
     
     assert result["status"] == "completed"
     assert "specification" in result
@@ -146,7 +132,7 @@ class TestCoderParsing:
         }
         """
         
-        parsed = parse_code_output(output)
+        parsed = coder_agent.parse_code_output(output)
         
         assert "files" in parsed
         assert len(parsed["files"]) == 1
@@ -156,7 +142,7 @@ class TestCoderParsing:
         """Test fallback for invalid JSON."""
         output = "Some non-JSON output"
         
-        parsed = parse_code_output(output)
+        parsed = coder_agent.parse_code_output(output)
         
         assert "files" in parsed
         assert len(parsed["files"]) == 1
@@ -169,7 +155,7 @@ class TestCoderParsing:
             "files": [{"path": "test.py", "content": "test"}]
         }
         
-        parsed = parse_code_output(output)
+        parsed = coder_agent.parse_code_output(output)
         
         assert parsed == output
 
@@ -185,7 +171,7 @@ class TestCoderValidation:
             ]
         }
         
-        is_valid, error = validate_code_output(output)
+        is_valid, error = coder_agent.validate_code_output(output)
         assert is_valid is True
         assert error is None
     
@@ -193,7 +179,7 @@ class TestCoderValidation:
         """Test validation fails without files key."""
         output = {"setup_instructions": "test"}
         
-        is_valid, error = validate_code_output(output)
+        is_valid, error = coder_agent.validate_code_output(output)
         assert is_valid is False
         assert "must contain 'files'" in error
     
@@ -205,7 +191,7 @@ class TestCoderValidation:
             ]
         }
         
-        is_valid, error = validate_code_output(output)
+        is_valid, error = coder_agent.validate_code_output(output)
         assert is_valid is False
         assert "missing 'content'" in error
 
@@ -221,7 +207,7 @@ class TestCoderHelpers:
             {"path": "tests/test_main.py", "content": ""}
         ]
         
-        tree = get_file_tree(files)
+        tree = coder_agent.get_file_tree(files)
         
         assert "src" in tree
         assert "tests" in tree
@@ -237,7 +223,7 @@ class TestCoderHelpers:
             {"path": "file3.py", "content": "print('hello')"}
         ]
         
-        stats = count_code_stats(files)
+        stats = coder_agent.count_code_stats(files)
         
         assert stats["total_files"] == 3
         assert stats["total_lines"] == 2  # file1 has 2 newlines, others have 0
@@ -249,7 +235,7 @@ class TestCoderHelpers:
 async def test_run_coder_simulation_mode():
     """Test coder runs in simulation mode when CrewAI unavailable."""
     spec = {"purpose": "test", "components": []}
-    result = await run_coder(spec, project_id="test-123")
+    result = await coder_agent.run_coder(spec, project_id="test-123")
     
     assert result["status"] == "completed"
     assert "files" in result
@@ -276,7 +262,7 @@ class TestTesterParsing:
         }
         """
         
-        parsed = parse_test_output(output)
+        parsed = tester_agent.parse_test_output(output)
         
         assert "review" in parsed
         assert "tests" in parsed
@@ -286,7 +272,7 @@ class TestTesterParsing:
         """Test fallback for invalid JSON."""
         output = "Non-JSON test output"
         
-        parsed = parse_test_output(output)
+        parsed = tester_agent.parse_test_output(output)
         
         assert "error" in parsed
         assert "raw_output" in parsed
@@ -302,7 +288,7 @@ class TestTesterValidation:
             "tests": []
         }
         
-        is_valid, error = validate_test_output(output)
+        is_valid, error = tester_agent.validate_test_output(output)
         assert is_valid is True
         assert error is None
     
@@ -310,7 +296,7 @@ class TestTesterValidation:
         """Test validation fails without review."""
         output = {"tests": []}
         
-        is_valid, error = validate_test_output(output)
+        is_valid, error = tester_agent.validate_test_output(output)
         assert is_valid is False
         assert "must contain 'review'" in error
 
@@ -330,7 +316,7 @@ class TestTesterHelpers:
             ]
         }
         
-        counts = count_issues_by_severity(review)
+        counts = tester_agent.count_issues_by_severity(review)
         
         assert counts["critical"] == 2
         assert counts["high"] == 1
@@ -346,7 +332,7 @@ class TestTesterHelpers:
                 {"severity": "low"}
             ]
         }
-        assert has_blocking_issues(review) is False
+        assert tester_agent.has_blocking_issues(review) is False
         
         # Has critical issue
         review = {
@@ -354,7 +340,7 @@ class TestTesterHelpers:
                 {"severity": "critical", "description": "Bug"}
             ]
         }
-        assert has_blocking_issues(review) is True
+        assert tester_agent.has_blocking_issues(review) is True
         
         # Has high issue
         review = {
@@ -362,7 +348,7 @@ class TestTesterHelpers:
                 {"severity": "high", "description": "Security"}
             ]
         }
-        assert has_blocking_issues(review) is True
+        assert tester_agent.has_blocking_issues(review) is True
     
     def test_extract_critical_issues(self):
         """Test extracting only critical/high issues."""
@@ -375,7 +361,7 @@ class TestTesterHelpers:
             ]
         }
         
-        critical = extract_critical_issues(review)
+        critical = tester_agent.extract_critical_issues(review)
         
         assert len(critical) == 2
         assert critical[0]["severity"] == "critical"
@@ -400,7 +386,7 @@ class TestTesterHelpers:
             }
         }
         
-        summary = generate_test_summary(output)
+        summary = tester_agent.generate_test_summary(output)
         
         assert "Code Quality: EXCELLENT" in summary
         assert "Matches Specification: YES" in summary
@@ -415,7 +401,7 @@ async def test_run_tester_simulation_mode():
     code_files = {"files": []}
     spec = {"purpose": "test"}
     
-    result = await run_tester(code_files, spec, project_id="test-123")
+    result = await tester_agent.run_tester(code_files, spec, project_id="test-123")
     
     assert result["status"] == "completed"
     assert "review" in result
