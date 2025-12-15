@@ -15,8 +15,10 @@ import (
 	"github.com/kyros-praxis/gateway/internal/auth"
 	"github.com/kyros-praxis/gateway/internal/config"
 	"github.com/kyros-praxis/gateway/internal/db"
+	"github.com/kyros-praxis/gateway/internal/events"
 	"github.com/kyros-praxis/gateway/internal/handlers"
 	"github.com/kyros-praxis/gateway/internal/middleware"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -88,8 +90,21 @@ func main() {
 		}
 	}
 
+	// Initialize events service
+	var eventsService *events.Service
+	if cfg.RedisURL != "" {
+		opt, err := redis.ParseURL(cfg.RedisURL)
+		if err != nil {
+			log.Error("failed to parse redis url", "error", err)
+		} else {
+			redisClient := redis.NewClient(opt)
+			eventsService = events.New(redisClient)
+			log.Info("events service initialized")
+		}
+	}
+
 	// Initialize handlers
-	h := handlers.New(cfg, database, authService, log)
+	h := handlers.New(cfg, database, authService, eventsService, log)
 	h.SetOAuth(oauthManager)
 	h.SetSessions(sessionManager)
 

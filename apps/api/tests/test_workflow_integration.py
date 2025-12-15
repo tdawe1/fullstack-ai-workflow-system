@@ -3,8 +3,12 @@ Integration tests for multi-agent workflow pipeline.
 """
 
 import pytest
-from app.workflows.pipeline_refactored import WorkflowPipeline
+from unittest.mock import AsyncMock
+from sqlalchemy import select
+from app.workflows.pipeline import WorkflowPipeline, workflow_pipeline, shared_memory
 from app.prompt_processor import prompt_processor
+from app.db.models import Project
+from app.db.session import AsyncSessionLocal
 
 
 class TestWorkflowPipeline:
@@ -19,7 +23,7 @@ class TestWorkflowPipeline:
     
     def test_pipeline_singleton(self):
         """Test that workflow_pipeline is accessible."""
-        from app.workflows.pipeline_refactored import workflow_pipeline
+        from app.workflows.pipeline import workflow_pipeline
         
         assert workflow_pipeline is not None
         assert isinstance(workflow_pipeline, WorkflowPipeline)
@@ -150,27 +154,62 @@ class TestWorkflowExecution:
             assert "specification" in result
             assert result["stage"] == "planner"
     
-    async def test_workflow_with_approved_spec_skips_planner(self):
+    async def test_workflow_with_approved_spec_skips_planner(self, db_session):
         """Test that providing approved spec skips planner stage."""
         pipeline = WorkflowPipeline()
+        # Mock DB interactions to avoid Async constraints and FK issues in test environment
+        pipeline._store_artifacts = AsyncMock()
+        pipeline._create_crew_run = AsyncMock()
+        pipeline._create_stage_record = AsyncMock(return_value="mock_stage_id")
+        pipeline._update_stage_record = AsyncMock()
         
-        approved_spec = {
-            "purpose": "Test application",
-            "components": ["frontend", "backend"],
-            "technology": {"language": "python"},
-            "file_structure": {},
-            "dependencies": ["fastapi"]
-        }
+        # Mock event publishing to avoid FK constraint issues
+        original_publish = shared_memory.publish_event
+        shared_memory.publish_event = AsyncMock()
         
-        result = await pipeline.execute_workflow(
-            project_id="test-123",
-            user_prompt="Build app",  # Won't be used
-            approved_spec=approved_spec
-        )
+        try:
+            approved_spec = {
+                "purpose": "Test application",
+                "components": ["frontend", "backend"],
+                "technology": {"language": "python"},
+                "file_structure": {},
+                "dependencies": ["fastapi"]
+            }
         
-        # Should skip planner
-        assert "planner" in result["stages"]
-        assert result["stages"]["planner"]["status"] == "skipped"
+            result = await pipeline.execute_workflow(
+                project_id="test-123",
+                user_prompt="""
+                I want to build a web application for managing tasks.
+                Features:
+                - User authentication
+                - Create, read, update, delete tasks
+                - Assign tasks to team members
+                - Set due dates and priorities
+                - Email notifications
+                Technology: Python with FastAPI backend, React frontend, PostgreSQL database
+                The application should be scalable to support 1000+ users.
+                """,
+                approved_spec=approved_spec
+            )
+        
+            # Should skip planner
+            assert "stages" in result, f"Workflow failed with error: {result.get('error', 'Unknown error')}"
+            assert "planner" in result["stages"]
+            assert result["stages"]["planner"]["status"] == "skipped"
+            
+            # Should match mock output for coder
+            assert "coder" in result["stages"]
+            assert result["stages"]["coder"]["status"] == "completed"
+            
+            # Should match mock output for tester
+            assert "tester" in result["stages"]
+            assert result["stages"]["tester"]["status"] == "completed"
+            
+            assert result["status"] == "completed"
+            
+        finally:
+            # Restore mock
+            shared_memory.publish_event = original_publish
 
 
 @pytest.mark.asyncio
@@ -179,9 +218,9 @@ class TestWorkflowStages:
     
     async def test_planner_stage_returns_specification(self):
         """Test planner stage execution."""
-        from app.agents.planner import run_planner
+        import app.agents.planner as planner_agent
         
-        result = await run_planner(
+        result = await planner_agent.run_planner(
             user_prompt="Build a simple web application",
             project_id="test-123"
         )
@@ -194,7 +233,7 @@ class TestWorkflowStages:
     
     async def test_coder_stage_returns_files(self):
         """Test coder stage execution."""
-        from app.agents.coder import run_coder
+        import app.agents.coder as coder_agent
         
         spec = {
             "purpose": "Test app",
@@ -204,7 +243,7 @@ class TestWorkflowStages:
             "dependencies": []
         }
         
-        result = await run_coder(
+        result = await coder_agent.run_coder(
             specification=spec,
             project_id="test-123"
         )
@@ -214,7 +253,7 @@ class TestWorkflowStages:
     
     async def test_tester_stage_returns_review(self):
         """Test tester stage execution."""
-        from app.agents.tester import run_tester
+        import app.agents.tester as tester_agent
         
         code_files = {
             "files": [
@@ -224,7 +263,7 @@ class TestWorkflowStages:
         
         spec = {"purpose": "Test"}
         
-        result = await run_tester(
+        result = await tester_agent.run_tester(
             code_files=code_files,
             specification=spec,
             project_id="test-123"
@@ -239,7 +278,7 @@ class TestWorkflowValidation:
     
     def test_specification_validation_complete(self):
         """Test complete specification passes validation."""
-        from app.agents.planner import validate_specification
+        import app.agents.orchestrator as orchestrator_agent
         
         spec = {
             "purpose": "Build app",
@@ -249,21 +288,21 @@ class TestWorkflowValidation:
             "dependencies": ["fastapi"]
         }
         
-        is_valid, error = validate_specification(spec)
+        is_valid, error = orchestrator_agent.validate_specification(spec)
         
         assert is_valid is True
         assert error is None
     
     def test_specification_validation_incomplete(self):
         """Test incomplete specification fails validation."""
-        from app.agents.planner import validate_specification
+        import app.agents.orchestrator as orchestrator_agent
         
         spec = {
             "purpose": "Build app"
             # Missing: components, technology, file_structure, dependencies
         }
         
-        is_valid, error = validate_specification(spec)
+        is_valid, error = orchestrator_agent.validate_specification(spec)
         
         assert is_valid is False
         assert error is not None
@@ -271,7 +310,7 @@ class TestWorkflowValidation:
     
     def test_code_output_validation_complete(self):
         """Test complete code output passes validation."""
-        from app.agents.coder import validate_code_output
+        import app.agents.coder as coder_agent
         
         output = {
             "files": [
@@ -279,21 +318,21 @@ class TestWorkflowValidation:
             ]
         }
         
-        is_valid, error = validate_code_output(output)
+        is_valid, error = coder_agent.validate_code_output(output)
         
         assert is_valid is True
         assert error is None
     
     def test_code_output_validation_missing_files(self):
         """Test code output without files fails validation."""
-        from app.agents.coder import validate_code_output
+        import app.agents.coder as coder_agent
         
         output = {
             "setup": "instructions"
             # Missing: files
         }
         
-        is_valid, error = validate_code_output(output)
+        is_valid, error = coder_agent.validate_code_output(output)
         
         assert is_valid is False
         assert "files" in error.lower()
@@ -304,7 +343,7 @@ class TestWorkflowHelpers:
     
     def test_has_blocking_issues_none(self):
         """Test blocking issue detection with no issues."""
-        from app.agents.tester import has_blocking_issues
+        import app.agents.tester as tester_agent
         
         review = {
             "issues": [
@@ -312,11 +351,11 @@ class TestWorkflowHelpers:
             ]
         }
         
-        assert has_blocking_issues(review) is False
+        assert tester_agent.has_blocking_issues(review) is False
     
     def test_has_blocking_issues_critical(self):
         """Test blocking issue detection with critical issue."""
-        from app.agents.tester import has_blocking_issues
+        import app.agents.tester as tester_agent
         
         review = {
             "issues": [
@@ -324,11 +363,11 @@ class TestWorkflowHelpers:
             ]
         }
         
-        assert has_blocking_issues(review) is True
+        assert tester_agent.has_blocking_issues(review) is True
     
     def test_has_blocking_issues_high(self):
         """Test blocking issue detection with high severity issue."""
-        from app.agents.tester import has_blocking_issues
+        import app.agents.tester as tester_agent
         
         review = {
             "issues": [
@@ -336,11 +375,11 @@ class TestWorkflowHelpers:
             ]
         }
         
-        assert has_blocking_issues(review) is True
+        assert tester_agent.has_blocking_issues(review) is True
     
     def test_count_issues_by_severity(self):
         """Test issue counting by severity."""
-        from app.agents.tester import count_issues_by_severity
+        import app.agents.tester as tester_agent
         
         review = {
             "issues": [
@@ -352,7 +391,7 @@ class TestWorkflowHelpers:
             ]
         }
         
-        counts = count_issues_by_severity(review)
+        counts = tester_agent.count_issues_by_severity(review)
         
         assert counts["critical"] == 2
         assert counts["high"] == 1

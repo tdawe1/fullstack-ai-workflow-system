@@ -9,7 +9,7 @@ Supervisory layer agent that:
 """
 
 import logging
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, Tuple
 
 try:
     from crewai import Agent, Task, Crew, Process
