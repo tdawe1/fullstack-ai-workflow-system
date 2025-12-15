@@ -17,8 +17,8 @@ BASE_DIR = pathlib.Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from app.core.config import settings
-from app.db.models import Base
+from app.core.config import settings  # noqa: E402
+from app.db.models import Base  # noqa: E402
 
 
 config = context.config

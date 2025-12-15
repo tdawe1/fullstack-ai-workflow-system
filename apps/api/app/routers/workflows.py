@@ -6,12 +6,10 @@ Connects the hierarchical agent system to HTTP endpoints.
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 
 from app.agents import (
-    run_architect,
-    run_orchestrator,
     run_coder,
     run_tester,
     run_integrator,

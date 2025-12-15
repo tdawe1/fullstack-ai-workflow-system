@@ -1,20 +1,19 @@
-"""Multi-stage workflow pipeline for agent orchestration."""
+"""Multi-agent workflow pipeline (PRD-compliant)."""
 
-import asyncio
+
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..core.config import settings
+
 from ..agents.planner import run_planner, validate_specification
 from ..agents.coder import run_coder, validate_code_output, parse_code_output
-from ..agents.tester import run_tester, validate_test_output, parse_test_output, has_blocking_issues
+from ..agents.tester import run_tester, parse_test_output, has_blocking_issues
 from ..prompt_processor import prompt_processor
-from ..db.models import Artifact, CriticFeedback, Task, WorkflowStage
+from ..db.models import Artifact, WorkflowStage
 from ..db.session import AsyncSessionLocal
 from ..memory.shared_memory import shared_memory
 
@@ -26,12 +25,12 @@ class WorkflowPipeline:
     """
     Multi-agent workflow pipeline (PRD-compliant).
     
-    Stages:
-    1. Planner - Analyzes prompt and creates specification
-    2. [USER APPROVAL GATE]
-    3. Coder - Generates code from approved specification
-    4. Tester - Reviews code and creates tests
-    5. [Iteration loop if issues found]
+    PRD Flow:
+    1. Planner analyzes prompt → creates specification
+    2. User reviews and approves specification
+    3. Coder generates code from approved spec
+    4. Tester reviews code and creates tests
+    5. Iteration loop if blocking issues found
     """
     
     def __init__(self):
@@ -42,472 +41,451 @@ class WorkflowPipeline:
         self, 
         project_id: str,
         user_prompt: str,
-        approved_spec: Optional[Dict] = None
+        approved_spec: Optional[Dict] = None,
+        iteration: int = 1
     ) -> Dict[str, Any]:
         """
         Execute full multi-agent workflow (PRD-compliant).
-        
-        Flow:
-        1. Validate and enhance prompt
-        2. Run planner agent → specification
-        3. [Wait for user approval if needed]
-        4. Run coder agent → code files
-        5. Run tester agent → tests + review
-        6. [Iterate if blocking issues found]
         
         Args:
             project_id: Project ID
             user_prompt: User's detailed prompt
             approved_spec: If provided, skip planner and use this spec
+            iteration: Current iteration number (for refinements)
             
         Returns:
-            Workflow result with all outputs
+            Workflow result containing all outputs and status
         """
-        logger.info(f"Starting multi-agent workflow for project {project_id}")
+        logger.info(f"Starting multi-agent workflow for project {project_id} (iteration {iteration})")
+        workflow_id = str(uuid4())
         
         try:
-            # Stage 1: Orchestrator
-            logger.info(f"Task {task_id}: Running orchestrator stage")
-            orchestrator_result = await self._run_stage(
-                task_id=task_id,
-                project_id=project_id,
-                stage="orchestrator",
-                crew_id="spec_to_tasks",
-                input_data=task_input
-            )
-            
-            if not orchestrator_result.get("success"):
-                logger.error(f"Task {task_id}: Orchestrator stage failed")
-                return {"success": False, "stage": "orchestrator", "error": "Orchestrator failed"}
-            
-            logger.info(f"Task {task_id}: Orchestrator stage completed")
-            
-            # Stage 2: Implementer
-            logger.info(f"Task {task_id}: Running implementer stage")
-            implementer_input = {
-                **task_input,
-                "plan": orchestrator_result.get("output", {})
+            result = {
+                "workflow_id": workflow_id,
+                "project_id": project_id,
+                "iteration": iteration,
+                "stages": {}
             }
             
-            implementer_result = await self._run_stage(
-                task_id=task_id,
-                project_id=project_id,
-                stage="implementer",
-                crew_id="spec_to_tasks",  # TODO: Create dedicated code_implementer crew
-                input_data=implementer_input
-            )
+            # STAGE 0: Validate and enhance prompt
+            logger.info(f"Workflow {workflow_id}: Validating prompt")
+            validation = prompt_processor.validate(user_prompt)
             
-            if not implementer_result.get("success"):
-                logger.error(f"Task {task_id}: Implementer stage failed")
-                return {"success": False, "stage": "implementer", "error": "Implementer failed"}
+            if not validation.valid:
+                logger.warning(f"Workflow {workflow_id}: Prompt validation failed")
+                return {
+                    **result,
+                    "status": "failed",
+                    "stage": "validation",
+                    "error": "Prompt validation failed",
+                    "validation": {
+                        "valid": False,
+                        "issues": validation.issues,
+                        "suggestions": validation.suggestions
+                    }
+                }
             
-            logger.info(f"Task {task_id}: Implementer stage completed")
+            # Enhance prompt with system context
+            enhanced_prompt = prompt_processor.enhance(user_prompt)
+            result["enhanced_prompt"] = enhanced_prompt
+            result["validation_score"] = validation.score
             
-            # Stage 3: Critic (with iteration)
-            logger.info(f"Task {task_id}: Running critic stage")
-            final_implementation = implementer_result.get("output", {})
-            
-            for iteration in range(1, self.max_critic_iterations + 1):
-                critic_result = await self._run_critic(
-                    task_id=task_id,
+            # STAGE 1: Planner Agent (unless spec already approved)
+            if approved_spec is None:
+                logger.info(f"Workflow {workflow_id}: Running planner agent")
+                planner_result = await self._run_planner_stage(
+                    workflow_id=workflow_id,
                     project_id=project_id,
-                    implementation=final_implementation,
-                    iteration=iteration
+                    prompt=enhanced_prompt
                 )
                 
-                if critic_result["status"] == "approved":
-                    logger.info(f"Task {task_id}: Approved by critic on iteration {iteration}")
-                    # Success! Store artifacts
-                    await self._store_artifacts(
-                        task_id=task_id,
-                        project_id=project_id,
-                        artifacts=final_implementation
-                    )
-                    
-                    # Publish completion event
-                    await shared_memory.publish_event(
-                        project_id=project_id,
-                        event_type="task_completed",
-                        payload={
-                            "task_id": task_id,
-                            "artifacts": list(final_implementation.keys())
-                        }
-                    )
-                    
+                if planner_result["status"] != "completed":
                     return {
-                        "success": True,
-                        "task_id": task_id,
-                        "artifacts": final_implementation,
-                        "critic_iterations": iteration
+                        **result,
+                        "status": "failed",
+                        "stage": "planner",
+                        "error": planner_result.get("error", "Planner agent failed"),
+                        "stages": {
+                            "planner": planner_result
+                        }
                     }
                 
-                elif critic_result["status"] == "changes_requested":
-                    logger.info(f"Task {task_id}: Changes requested by critic on iteration {iteration}")
-                    # Refine implementation
-                    final_implementation = await self._refine_implementation(
-                        task_id=task_id,
-                        project_id=project_id,
-                        implementation=final_implementation,
-                        feedback=critic_result["feedback"]
-                    )
+                specification = planner_result["specification"]
+                result["stages"]["planner"] = planner_result
                 
-                else:  # rejected
-                    logger.warning(f"Task {task_id}: Rejected by critic on iteration {iteration}")
-                    # Escalate to human
-                    await self._escalate_to_human(
-                        task_id=task_id,
-                        project_id=project_id,
-                        reason=critic_result["feedback"]
-                    )
+                # Validate specification structure
+                is_valid, error = validate_specification(specification)
+                if not is_valid:
+                    logger.error(f"Workflow {workflow_id}: Invalid specification: {error}")
                     return {
-                        "success": False,
-                        "stage": "critic",
-                        "error": "Rejected by critic",
-                        "feedback": critic_result["feedback"]
+                        **result,
+                        "status": "failed",
+                        "stage": "planner",
+                        "error": f"Invalid specification: {error}"
+                    }
+                
+                # PRD: User must approve before proceeding
+                if self.require_user_approval:
+                    logger.info(f"Workflow {workflow_id}: Awaiting user approval")
+                    return {
+                        **result,
+                        "status": "awaiting_approval",
+                        "stage": "planner",
+                        "specification": specification,
+                        "message": "Specification ready for review. Approve to continue."
+                    }
+            else:
+                # Using pre-approved spec
+                specification = approved_spec
+                result["stages"]["planner"] = {
+                    "status": "skipped",
+                    "reason": "Using pre-approved specification"
+                }
+            
+            # STAGE 2: Coder Agent
+            logger.info(f"Workflow {workflow_id}: Running coder agent")
+            coder_result = await self._run_coder_stage(
+                workflow_id=workflow_id,
+                project_id=project_id,
+                specification=specification
+            )
+            
+            if coder_result["status"] != "completed":
+                return {
+                    **result,
+                    "status": "failed",
+                    "stage": "coder",
+                    "error": coder_result.get("error", "Coder agent failed"),
+                    "stages": {**result["stages"], "coder": coder_result}
+                }
+            
+            code_output = parse_code_output(coder_result["code_output"])
+            is_valid, error = validate_code_output(code_output)
+            if not is_valid:
+                logger.error(f"Workflow {workflow_id}: Invalid code output: {error}")
+                return {
+                    **result,
+                    "status": "failed",
+                    "stage": "coder",
+                    "error": f"Invalid code output: {error}"
+                }
+            
+            result["stages"]["coder"] = {
+                **coder_result,
+                "files_generated": len(code_output.get("files", []))
+            }
+            
+            # STAGE 3: Tester Agent
+            logger.info(f"Workflow {workflow_id}: Running tester agent")
+            tester_result = await self._run_tester_stage(
+                workflow_id=workflow_id,
+                project_id=project_id,
+                code_files=code_output,
+                specification=specification
+            )
+            
+            if tester_result["status"] != "completed":
+                return {
+                    **result,
+                    "status": "failed",
+                    "stage": "tester",
+                    "error": tester_result.get("error", "Tester agent failed"),
+                    "stages": {**result["stages"], "tester": tester_result}
+                }
+            
+            test_output = parse_test_output(tester_result["test_output"])
+            result["stages"]["tester"] = tester_result
+            
+            # Check for blocking issues
+            review = test_output.get("review", {})
+            if has_blocking_issues(review):
+                logger.warning(f"Workflow {workflow_id}: Blocking issues found")
+                
+                # Check if we can iterate
+                if iteration < self.max_iterations:
+                    logger.info(f"Workflow {workflow_id}: Will iterate (attempt {iteration + 1})")
+                    return {
+                        **result,
+                        "status": "needs_refinement",
+                        "stage": "tester",
+                        "review": review,
+                        "message": f"Blocking issues found. Iteration {iteration + 1} needed.",
+                        "can_iterate": True
+                    }
+                else:
+                    logger.error(f"Workflow {workflow_id}: Max iterations reached")
+                    return {
+                        **result,
+                        "status": "failed",
+                        "stage": "tester",
+                        "error": "Max iterations reached with unresolved blocking issues",
+                        "review": review
                     }
             
-            # Max iterations reached
-            logger.warning(f"Task {task_id}: Max critic iterations ({self.max_critic_iterations}) reached")
+            # SUCCESS! Store artifacts
+            logger.info(f"Workflow {workflow_id}: All stages passed, storing artifacts")
+            await self._store_artifacts(
+                project_id=project_id,
+                code_files=code_output.get("files", []),
+                test_files=test_output.get("tests", [])
+            )
+            
+            # Publish completion event
+            await shared_memory.publish_event(
+                project_id=project_id,
+                event_type="workflow_completed",
+                payload={
+                    "workflow_id": workflow_id,
+                    "iteration": iteration,
+                    "files_generated": len(code_output.get("files", [])),
+                    "tests_generated": len(test_output.get("tests", []))
+                }
+            )
+            
             return {
-                "success": False,
-                "stage": "critic",
-                "error": "Max critic iterations reached",
-                "iterations": self.max_critic_iterations
+                **result,
+                "status": "completed",
+                "code_files": code_output.get("files", []),
+                "test_files": test_output.get("tests", []),
+                "review": review,
+                "message": "Workflow completed successfully!"
             }
         
         except Exception as e:
-            logger.exception(f"Task {task_id}: Workflow failed with exception: {e}")
+            logger.exception(f"Workflow {workflow_id}: Unexpected error: {e}")
             return {
-                "success": False,
-                "error": str(e)
+                "workflow_id": workflow_id,
+                "project_id": project_id,
+                "status": "failed",
+                "stage": "unknown",
+                "error": f"Unexpected error: {str(e)}"
             }
     
-    async def _run_stage(
+    async def refine_workflow(
         self,
-        task_id: str,
         project_id: str,
-        stage: str,
-        crew_id: str,
-        input_data: Dict[str, Any]
+        original_prompt: str,
+        refinement_notes: str,
+        previous_spec: Dict,
+        iteration: int
     ) -> Dict[str, Any]:
         """
-        Run a single workflow stage.
+        Refine workflow based on user feedback.
+        
+        PRD: "iterative refinement loop"
         
         Args:
-            task_id: Task ID
             project_id: Project ID
-            stage: Stage name (orchestrator, implementer)
-            crew_id: Crew to use
-            input_data: Input for the crew
+            original_prompt: Original user prompt
+            refinement_notes: User's refinement notes
+            previous_spec: Previous specification
+            iteration: Iteration number
             
         Returns:
-            Stage result
+            New workflow result
         """
-        # Create workflow stage record
-        stage_id = str(uuid4())
-        async with AsyncSessionLocal() as session:
-            # First create a crew run
-            run = await store.create_run(crew_id=crew_id, payload=input_data)
+        logger.info(f"Refining workflow for project {project_id} (iteration {iteration})")
+        
+        # Combine original prompt with refinement notes
+        refined_prompt = f"""
+ORIGINAL PROMPT:
+{original_prompt}
+
+REFINEMENT NOTES (from user):
+{refinement_notes}
+
+PREVIOUS SPECIFICATION (for reference):
+{previous_spec}
+
+Please update the implementation based on the refinement notes.
+"""
+        
+        # Re-run workflow with refined prompt
+        return await self.execute_workflow(
+            project_id=project_id,
+            user_prompt=refined_prompt,
+            iteration=iteration
+        )
+    
+    async def _run_planner_stage(
+        self,
+        workflow_id: str,
+        project_id: str,
+        prompt: str
+    ) -> Dict[str, Any]:
+        """Run planner agent and record stage."""
+        stage_id = await self._create_stage_record(
+            workflow_id=workflow_id,
+            project_id=project_id,
+            stage="planner"
+        )
+        
+        try:
+            result = await run_planner(
+                user_prompt=prompt,
+                project_id=project_id
+            )
             
+            await self._update_stage_record(
+                stage_id=stage_id,
+                status="completed" if result["status"] == "completed" else "failed",
+                output=result.get("specification")
+            )
+            
+            return result
+        
+        except Exception:
+            await self._update_stage_record(stage_id=stage_id, status="failed")
+            raise
+    
+    async def _run_coder_stage(
+        self,
+        workflow_id: str,
+        project_id: str,
+        specification: Dict
+    ) -> Dict[str, Any]:
+        """Run coder agent and record stage."""
+        stage_id = await self._create_stage_record(
+            workflow_id=workflow_id,
+            project_id=project_id,
+            stage="coder"
+        )
+        
+        try:
+            result = await run_coder(
+                specification=specification,
+                project_id=project_id
+            )
+            
+            await self._update_stage_record(
+                stage_id=stage_id,
+                status="completed" if result["status"] == "completed" else "failed",
+                output=result.get("code_output")
+            )
+            
+            return result
+        
+        except Exception:
+            await self._update_stage_record(stage_id=stage_id, status="failed")
+            raise
+    
+    async def _run_tester_stage(
+        self,
+        workflow_id: str,
+        project_id: str,
+        code_files: Dict,
+        specification: Dict
+    ) -> Dict[str, Any]:
+        """Run tester agent and record stage."""
+        stage_id = await self._create_stage_record(
+            workflow_id=workflow_id,
+            project_id=project_id,
+            stage="tester"
+        )
+        
+        try:
+            result = await run_tester(
+                code_files=code_files,
+                specification=specification,
+                project_id=project_id
+            )
+            
+            await self._update_stage_record(
+                stage_id=stage_id,
+                status="completed" if result["status"] == "completed" else "failed",
+                output=result.get("test_output")
+            )
+            
+            return result
+        
+        except Exception:
+            await self._update_stage_record(stage_id=stage_id, status="failed")
+            raise
+    
+    async def _create_stage_record(
+        self,
+        workflow_id: str,
+        project_id: str,
+        stage: str
+    ) -> str:
+        """Create workflow stage database record."""
+        stage_id = str(uuid4())
+        
+        async with AsyncSessionLocal() as session:
             workflow_stage = WorkflowStage(
                 id=stage_id,
-                crew_run_id=run.id,
+                crew_run_id=workflow_id,  # Using workflow_id as crew_run_id
                 stage=stage,
                 status="active",
                 started_at=datetime.now(timezone.utc)
             )
             session.add(workflow_stage)
             await session.commit()
-            
-            # Update task with crew_run_id
-            result = await session.execute(
-                select(Task).where(Task.id == task_id)
-            )
-            task = result.scalars().first()
-            if task:
-                task.crew_run_id = run.id
-                task.status = "running"
-                await session.commit()
         
-        # Run the crew in background
-        await run_crew(run.id, crew_id, input_data)
-        
-        # Wait for completion
-        max_wait = 300  # 5 minutes
-        elapsed = 0
-        while elapsed < max_wait:
-            status = await store.get_status(run.id)
-            
-            if status == RunStatus.succeeded:
-                # Get result
-                run_data = await store.get_run(run.id)
-                
-                # Update workflow stage
-                async with AsyncSessionLocal() as session:
-                    result = await session.execute(
-                        select(WorkflowStage).where(WorkflowStage.id == stage_id)
-                    )
-                    workflow_stage = result.scalars().first()
-                    if workflow_stage:
-                        workflow_stage.status = "completed"
-                        workflow_stage.completed_at = datetime.now(timezone.utc)
-                        workflow_stage.output = run_data.run.result
-                        await session.commit()
-                
-                return {
-                    "success": True,
-                    "run_id": run.id,
-                    "output": run_data.run.result
-                }
-            
-            elif status in [RunStatus.failed, RunStatus.canceled]:
-                # Update workflow stage
-                async with AsyncSessionLocal() as session:
-                    result = await session.execute(
-                        select(WorkflowStage).where(WorkflowStage.id == stage_id)
-                    )
-                    workflow_stage = result.scalars().first()
-                    if workflow_stage:
-                        workflow_stage.status = "failed"
-                        workflow_stage.completed_at = datetime.now(timezone.utc)
-                        await session.commit()
-                
-                return {"success": False, "run_id": run.id, "status": status.value}
-            
-            # Still running
-            await asyncio.sleep(2)
-            elapsed += 2
-        
-        # Timeout
-        return {"success": False, "error": "Timeout waiting for crew run"}
+        return stage_id
     
-    async def _run_critic(
+    async def _update_stage_record(
         self,
-        task_id: str,
-        project_id: str,
-        implementation: Dict[str, Any],
-        iteration: int
-    ) -> Dict[str, str]:
-        """
-        Run critic stage to review implementation.
-        
-        Uses the code_reviewer crew to analyze artifacts for:
-        - Correctness and functionality
-        - Code quality and best practices
-        - Security issues
-        - Test coverage
-        - Completeness
-        
-        Args:
-            task_id: Task ID
-            project_id: Project ID
-            implementation: Implementation to review (contains artifacts)
-            iteration: Critic iteration number
-            
-        Returns:
-            Critic feedback with approval status
-        """
-        logger.info(f"Running critic review (iteration {iteration}) for task {task_id}")
-        
+        stage_id: str,
+        status: str,
+        output: Optional[Any] = None
+    ):
+        """Update workflow stage record."""
         async with AsyncSessionLocal() as session:
-            # Get task to find crew_run_id
             result = await session.execute(
-                select(Task).where(Task.id == task_id)
+                select(WorkflowStage).where(WorkflowStage.id == stage_id)
             )
-            task = result.scalars().first()
+            stage = result.scalars().first()
             
-            if not task or not task.crew_run_id:
-                return {
-                    "status": "rejected",
-                    "feedback": "No crew run found for task"
-                }
-            
-            # Get artifacts from database
-            result = await session.execute(
-                select(Artifact).where(Artifact.project_id == project_id)
-            )
-            artifacts = result.scalars().all()
-            
-            if not artifacts:
-                logger.warning(f"No artifacts found for project {project_id}")
-                # Auto-approve if no artifacts (might be a simple task)
-                feedback_record = CriticFeedback(
-                    id=str(uuid4()),
-                    crew_run_id=task.crew_run_id,
-                    iteration=iteration,
-                    status="approved",
-                    feedback="No artifacts to review - task may not produce artifacts"
-                )
-                session.add(feedback_record)
+            if stage:
+                stage.status = status
+                stage.completed_at = datetime.now(timezone.utc)
+                if output:
+                    stage.output = output
                 await session.commit()
-                
-                return {
-                    "status": "approved",
-                    "feedback": "No artifacts to review"
-                }
-            
-            # Convert artifacts to dict format for crew
-            artifacts_data = [
-                {
-                    "id": str(art.id),
-                    "name": art.name,
-                    "type": art.type,
-                    "content": art.content,
-                    "metadata": art.metadata
-                }
-                for art in artifacts
-            ]
-            
-            # Define review criteria
-            criteria = {
-                "correctness": "Code should work correctly and handle edge cases",
-                "completeness": "All task requirements should be addressed",
-                "quality": "Code should be clean, maintainable, and follow best practices",
-                "tests": "Unit tests should exist and provide good coverage",
-                "security": "No security vulnerabilities or dangerous patterns"
-            }
-            
-            try:
-                # Import and run code reviewer crew
-                from ..crews.code_reviewer import create_code_reviewer_crew, parse_review_output
-                
-                logger.info(f"Creating code reviewer crew for {len(artifacts_data)} artifacts")
-                crew = create_code_reviewer_crew(artifacts_data, criteria)
-                
-                # Run the crew
-                result = crew.kickoff()
-                
-                # Parse the output
-                review = parse_review_output(result)
-                
-                logger.info(
-                    f"Critic review complete: approved={review['approved']}, "
-                    f"issues={len(review.get('issues', []))}"
-                )
-                
-                # Store feedback in database
-                feedback_record = CriticFeedback(
-                    id=str(uuid4()),
-                    crew_run_id=task.crew_run_id,
-                    iteration=iteration,
-                    status="approved" if review["approved"] else "rejected",
-                    feedback=review["feedback"]
-                )
-                session.add(feedback_record)
-                await session.commit()
-                
-                return {
-                    "status": "approved" if review["approved"] else "rejected",
-                    "feedback": review["feedback"],
-                    "issues": review.get("issues", []),
-                    "suggestions": review.get("suggestions", [])
-                }
-                
-            except Exception as e:
-                logger.error(f"Critic crew failed: {e}", exc_info=True)
-                
-                # On error, auto-approve but log the issue
-                # This prevents the workflow from getting stuck
-                feedback_record = CriticFeedback(
-                    id=str(uuid4()),
-                    crew_run_id=task.crew_run_id,
-                    iteration=iteration,
-                    status="approved",
-                    feedback=f"Critic review failed ({str(e)}), auto-approving to continue workflow"
-                )
-                session.add(feedback_record)
-                await session.commit()
-                
-                return {
-                    "status": "approved",
-                    "feedback": f"Critic review encountered an error but auto-approved: {str(e)}"
-                }
-    
-    async def _refine_implementation(
-        self,
-        task_id: str,
-        project_id: str,
-        implementation: Dict[str, Any],
-        feedback: str
-    ) -> Dict[str, Any]:
-        """
-        Refine implementation based on critic feedback.
-        
-        Args:
-            task_id: Task ID
-            project_id: Project ID
-            implementation: Current implementation
-            feedback: Critic feedback
-            
-        Returns:
-            Refined implementation
-        """
-        # TODO: Implement refinement logic
-        # For now, return original implementation
-        return implementation
     
     async def _store_artifacts(
         self,
-        task_id: str,
         project_id: str,
-        artifacts: Dict[str, Any]
+        code_files: List[Dict],
+        test_files: List[Dict]
     ):
-        """
-        Store generated artifacts.
-        
-        Args:
-            task_id: Task ID
-            project_id: Project ID
-            artifacts: Artifact data
-        """
-        from ..db.models import Artifact
-        
+        """Store generated artifacts in database."""
         async with AsyncSessionLocal() as session:
-            for name, content in artifacts.items():
+            # Store code files
+            for file_obj in code_files:
                 artifact = Artifact(
                     id=str(uuid4()),
                     project_id=project_id,
-                    task_id=task_id,
-                    name=name,
-                    type="file",
-                    content=str(content),
+                    name=file_obj.get("path", "unknown"),
+                    type="code",
+                    content=file_obj.get("content", ""),
+                    metadata={
+                        "description": file_obj.get("description", ""),
+                        "generated_by": "coder_agent"
+                    },
+                    integrated=False
+                )
+                session.add(artifact)
+            
+            # Store test files
+            for test_obj in test_files:
+                artifact = Artifact(
+                    id=str(uuid4()),
+                    project_id=project_id,
+                    name=test_obj.get("file", "unknown"),
+                    type="test",
+                    content=test_obj.get("content", ""),
+                    metadata={
+                        "description": test_obj.get("description", ""),
+                        "generated_by": "tester_agent"
+                    },
                     integrated=False
                 )
                 session.add(artifact)
             
             await session.commit()
-    
-    async def _escalate_to_human(
-        self,
-        task_id: str,
-        project_id: str,
-        reason: str
-    ):
-        """
-        Escalate task to human review.
-        
-        Args:
-            task_id: Task ID
-            project_id: Project ID
-            reason: Reason for escalation
-        """
-        await shared_memory.publish_event(
-            project_id=project_id,
-            event_type="task_escalated",
-            payload={
-                "task_id": task_id,
-                "reason": reason
-            }
-        )
-        
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(Task).where(Task.id == task_id)
-            )
-            task = result.scalars().first()
-            if task:
-                task.status = "blocked"
-                await session.commit()
+            logger.info(f"Stored {len(code_files)} code files and {len(test_files)} test files")
 
 
 # Global instance

@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import MemoryEvent, SharedMemory
 from ..db.session import AsyncSessionLocal

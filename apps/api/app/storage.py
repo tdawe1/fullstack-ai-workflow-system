@@ -49,7 +49,11 @@ class PostgresStore:
                 result=run_row.result,
             )
             events = [self._event_to_dict(ev) for ev in run_row.events]
-            return RunRecord(run=run, created_at=run_row.created_at, updated_at=run_row.updated_at, events=events, canceled=run_row.canceled)
+            return RunRecord(run=run,            created_at=run_row.created_at, 
+            updated_at=run_row.updated_at, 
+            events=events, 
+            canceled=run_row.canceled
+        )
 
     async def update_status(self, run_id: str, status: RunStatus, result: Optional[Dict[str, Any]] = None) -> None:
         async with AsyncSessionLocal() as session:

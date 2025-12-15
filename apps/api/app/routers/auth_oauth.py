@@ -14,7 +14,6 @@ from ..auth.providers import AuthProvider
 from ..auth.providers.password import PasswordAuthProvider
 # from ..auth.providers.oauth_google import GoogleOAuthProvider  # Implement when needed
 # from ..auth.providers.oauth_github import GitHubOAuthProvider  # Implement when needed
-from ..auth.session import create_session
 
 
 router = APIRouter(prefix="/auth", tags=["authentication"])

@@ -19,7 +19,7 @@ from .core.config import settings
 from .crew_runner import run_crew
 from .db.models import User
 from .models import CancelRequest, Run, RunCreate, RunStatus
-from .routers import auth, auth_refresh, auth_ws, batch_runs, memory, projects
+from .routers import auth, auth_refresh, batch_runs, memory, projects
 from .storage import store
 
 logger = logging.getLogger(__name__)
@@ -337,7 +337,10 @@ async def terminal_websocket(websocket: WebSocket, token: str = None):
     
     # Only accept connection after successful authentication
     await websocket.accept()
-    logger.info(f"Terminal {terminal_id} WebSocket ACCEPTED for user {authenticated_user.username} (ID: {authenticated_user.id})")
+    logger.info(
+        f"Terminal {terminal_id} WebSocket ACCEPTED for user {authenticated_user.username} "
+        f"(ID: {authenticated_user.id})"
+    )
     
     # Send auth success confirmation
     await websocket.send_json({

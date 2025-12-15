@@ -5,11 +5,10 @@ we provide a temporary token specifically for WebSocket connections.
 """
 
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.auth as auth_module
-from ..core.config import settings
 from ..db.models import User
 from ..db.session import get_session
 

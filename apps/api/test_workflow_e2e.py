@@ -294,7 +294,7 @@ class E2ETest:
             ) as resp:
                 if resp.status == 200:
                     return await resp.json()
-        except:
+        except Exception:
             pass
         
         return {}

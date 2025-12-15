@@ -4,7 +4,7 @@ Unified session management for all authentication providers.
 Creates and manages user sessions regardless of auth method.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional
 from fastapi import Response
 

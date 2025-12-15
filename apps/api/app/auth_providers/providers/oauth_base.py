@@ -5,7 +5,7 @@ TEMPLATE for future OAuth providers (Google, GitHub, etc.)
 Implement this when adding OAuth support.
 """
 
-from typing import Any, Optional
+from typing import Any
 from abc import abstractmethod
 
 from . import AuthProvider

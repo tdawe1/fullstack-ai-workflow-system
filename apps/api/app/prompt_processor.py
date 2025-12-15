@@ -195,7 +195,7 @@ class PromptProcessor:
         
         # Add user context if provided
         if context:
-            parts.append(f"\nADDITIONAL CONTEXT:")
+            parts.append("\nADDITIONAL CONTEXT:")
             for key, value in context.items():
                 parts.append(f"- {key}: {value}")
         
@@ -217,7 +217,7 @@ class PromptProcessor:
         Returns:
             PromptRequirements with extracted info
         """
-        prompt_lower = prompt.lower()
+        # prompt_lower = prompt.lower()
         
         # Extract purpose (first sentence usually)
         purpose = self._extract_purpose(prompt)

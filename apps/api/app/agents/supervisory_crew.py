@@ -262,7 +262,7 @@ async def run_supervisory_crew(
                 feedback = output
         
         # Max rounds reached - force consensus with last result
-        logger.warning(f"Max deliberation rounds reached, using last result")
+        logger.warning("Max deliberation rounds reached, using last result")
         return {
             "status": "completed",
             "architecture": architecture,

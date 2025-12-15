@@ -138,7 +138,10 @@ async def run_with_crewai(run_id: str, manifest: Dict[str, Any], payload: Dict[s
     # Configure provider env before imports/initialization
     provider, model_name = _configure_provider_env(manifest)
     key_present = bool(os.getenv("OPENAI_API_KEY"))
-    await store.add_event(run_id, {"type": "log", "message": f"Provider: {provider}, model: {model_name}, key_present={key_present}"})
+    await store.add_event(run_id, {
+        "type": "log",
+        "message": f"Provider: {provider}, model: {model_name}, key_present={key_present}"
+    })
 
     try:
         from crewai import Agent, Task, Crew, Process  # type: ignore
@@ -175,8 +178,18 @@ async def run_with_crewai(run_id: str, manifest: Dict[str, Any], payload: Dict[s
     final_prompt = _build_structured_prompt(base_prompt, user_prompt)
 
     # Define agent and task
-    agent = Agent(role=role_name, goal=goal, backstory="Kyros Praxis planning agent", verbose=True, allow_delegation=False)
-    task = Task(description=final_prompt, agent=agent, expected_output="Return JSON with key 'tasks' as specified.")
+    agent = Agent(
+        role=role_name,
+        goal=goal,
+        backstory="Kyros Praxis planning agent",
+        verbose=True,
+        allow_delegation=False
+    )
+    task = Task(
+        description=final_prompt,
+        agent=agent,
+        expected_output="Return JSON with key 'tasks' as specified."
+    )
 
     crew = Crew(agents=[agent], tasks=[task], process=Process.sequential)
 

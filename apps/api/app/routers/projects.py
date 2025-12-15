@@ -12,7 +12,6 @@ from ..db.models import Artifact, Project, Task, User
 from ..db.session import get_session
 from ..memory.shared_memory import shared_memory
 from ..models_multi_agent import (
-    ArtifactResponse,
     ProjectCreate,
     ProjectDashboard,
     ProjectResponse,
@@ -26,7 +25,7 @@ from pydantic import BaseModel
 
 # Import cache utilities
 try:
-    from ..cache.redis_cache import cache, cache_key_project_dashboard, invalidate_project_cache
+    from ..cache.redis_cache import invalidate_project_cache
     CACHE_AVAILABLE = True
 except ImportError:
     CACHE_AVAILABLE = False

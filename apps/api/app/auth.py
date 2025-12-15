@@ -47,7 +47,11 @@ def get_jwt_settings() -> tuple[str, str, int]:
     return secret_key, algorithm, expire_minutes
 
 
-async def get_current_user_from_token(token: str, session: AsyncSession, allowed_types: list[str] = None) -> Optional[User]:
+async def get_current_user_from_token(
+    token: str, 
+    session: AsyncSession, 
+    allowed_types: list[str] = None
+) -> Optional[User]:
     """
     Validate JWT token and return user (without raising exceptions).
     

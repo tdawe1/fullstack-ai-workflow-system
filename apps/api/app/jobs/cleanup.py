@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import delete, select
 
-from ..db.models import Task, Project
+from ..db.models import Task
 try:
     from ..db.models import Run
 except ImportError:
@@ -118,7 +118,7 @@ async def database_maintenance():
     Runs daily at 2 AM.
     """
     try:
-        async with AsyncSessionLocal() as session:
+        async with AsyncSessionLocal() as _:
             # Vacuum and analyze (PostgreSQL specific)
             # Note: VACUUM cannot be run inside a transaction, so we skip for now
             # In production, run this via a separate database maintenance script
