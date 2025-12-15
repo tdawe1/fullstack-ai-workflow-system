@@ -20,20 +20,20 @@ A production-ready platform for orchestrating AI agents to generate, review, and
 └─────────────────────────┬───────────────────────────────────────┘
                           │ HTTP
 ┌─────────────────────────▼───────────────────────────────────────┐
-│                    Worker Service (Python)                       │
-│                                                                  │
-│  SUPERVISORY   ┌──────────┐  ⟷  ┌──────────┐                   │
-│  LAYER         │ Architect│     │ Planner  │   iterate until    │
-│                └────┬─────┘     └────┬─────┘   consensus         │
-│                     │                │                           │
-│  EXECUTION    ┌─────▼────┐  ┌───────▼──┐  ┌──────────┐         │
-│  LAYER        │Orchestrat│─▶│  Coder   │─▶│  Tester  │         │
-│               └──────────┘  └──────────┘  └────┬─────┘         │
-│                                                │                 │
-│  INTEGRATION  ┌────────────────────────────────▼───────────────┐│
-│  LAYER        │             Integrator                         ││
-│               │     (consults Architect/Planner for merges)    ││
-│               └────────────────────────────────────────────────┘│
+│                     Worker Service (Python)                     │
+│                                                                 │
+│  SUPERVISORY   ┌──────────┐     ┌──────────┐                    │
+│  LAYER         │ Architect│ ⟷  │ Planner  │   iterate until   │
+│                └────┬─────┘     └────┬─────┘   consensus        │
+│                     │                │                          │
+│  EXECUTION    ┌─────▼────┐  ┌───────▼──┐  ┌──────────┐          │
+│  LAYER        │Orchestrat│─▶│  Coder   │─▶│  Tester  │          │
+│               └──────────┘  └──────────┘  └────┬─────┘          │
+│                                                │                │
+│  INTEGRATION  ┌────────────────────────────────▼──────────────┐ │
+│  LAYER        │             Integrator                        │ │
+│               │    (consults Architect/Planner for merges)    │ │
+│               └───────────────────────────────────────────────┘ │
 └─────────────────────────┬───────────────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────────────┐
