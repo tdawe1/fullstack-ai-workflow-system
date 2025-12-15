@@ -87,7 +87,11 @@ func (h *Handler) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// TODO: Link OAuth account to user (for multiple providers)
+	// Link OAuth account to user
+	if err := h.db.LinkOAuthAccount(r.Context(), user.ID, oauthUser.Provider, oauthUser.ProviderID, oauthUser.Email, oauthUser.AccessToken, oauthUser.RefreshToken); err != nil {
+		h.log.Warn("failed to link oauth account", "error", err)
+		// Non-fatal: user can still login, just won't have linked account
+	}
 
 	// Create tokens
 	accessToken, err := h.auth.CreateAccessToken(user)
@@ -167,8 +171,9 @@ func (h *Handler) MFAEnable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Secret string `json:"secret"`
-		Code   string `json:"code"`
+		Secret      string   `json:"secret"`
+		Code        string   `json:"code"`
+		BackupCodes []string `json:"backup_codes"`
 	}
 	if err := h.decodeAndValidate(r, &req); err != nil {
 		h.writeError(w, http.StatusBadRequest, "validation_error", err.Error())
@@ -181,8 +186,19 @@ func (h *Handler) MFAEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Store MFA secret in database
-	// For now, return success
+	// Hash backup codes for storage
+	hashedCodes := make([]string, len(req.BackupCodes))
+	for i, code := range req.BackupCodes {
+		hashedCodes[i] = auth.HashBackupCode(code)
+	}
+
+	// Store MFA settings in database
+	if err := h.db.UpdateUserMFA(r.Context(), user.ID, true, &req.Secret, hashedCodes); err != nil {
+		h.log.Error("failed to enable MFA", "error", err)
+		h.writeError(w, http.StatusInternalServerError, "internal_error", "Failed to enable MFA")
+		return
+	}
+
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"enabled": true,
 		"message": "MFA enabled successfully",
@@ -200,11 +216,50 @@ func (h *Handler) MFAVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Get user's MFA secret from database and verify
-	// For now, placeholder
-	h.writeJSON(w, http.StatusOK, map[string]interface{}{
-		"verified": true,
-	})
+	// Parse user ID
+	userID, err := uuid.Parse(req.UserID)
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID format")
+		return
+	}
+
+	// Get user's MFA secret from database
+	enabled, secret, backupCodes, err := h.db.GetUserMFA(r.Context(), userID)
+	if err != nil {
+		h.log.Error("failed to get MFA settings", "error", err)
+		h.writeError(w, http.StatusInternalServerError, "internal_error", "Failed to verify MFA")
+		return
+	}
+
+	if !enabled || secret == nil {
+		h.writeError(w, http.StatusBadRequest, "mfa_not_enabled", "MFA is not enabled for this user")
+		return
+	}
+
+	// Try TOTP first
+	if auth.ValidateTOTPWithWindow(*secret, req.Code, 1) {
+		h.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"verified": true,
+		})
+		return
+	}
+
+	// Try backup codes
+	if idx := auth.ValidateBackupCode(req.Code, backupCodes); idx >= 0 {
+		// Remove used backup code
+		newCodes := append(backupCodes[:idx], backupCodes[idx+1:]...)
+		if err := h.db.UpdateUserMFA(r.Context(), userID, true, secret, newCodes); err != nil {
+			h.log.Error("failed to update backup codes", "error", err)
+		}
+		h.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"verified":          true,
+			"backup_code_used":  true,
+			"backup_codes_left": len(newCodes),
+		})
+		return
+	}
+
+	h.writeError(w, http.StatusUnauthorized, "invalid_code", "Invalid verification code")
 }
 
 // MFADisable handles POST /auth/mfa/disable - disables MFA.
@@ -223,7 +278,35 @@ func (h *Handler) MFADisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Verify code and disable MFA in database
+	// Get current MFA settings
+	enabled, secret, backupCodes, err := h.db.GetUserMFA(r.Context(), user.ID)
+	if err != nil {
+		h.log.Error("failed to get MFA settings", "error", err)
+		h.writeError(w, http.StatusInternalServerError, "internal_error", "Failed to disable MFA")
+		return
+	}
+
+	if !enabled {
+		h.writeError(w, http.StatusBadRequest, "mfa_not_enabled", "MFA is not enabled")
+		return
+	}
+
+	// Verify code before disabling
+	validTOTP := secret != nil && auth.ValidateTOTPWithWindow(*secret, req.Code, 1)
+	validBackup := auth.ValidateBackupCode(req.Code, backupCodes) >= 0
+
+	if !validTOTP && !validBackup {
+		h.writeError(w, http.StatusUnauthorized, "invalid_code", "Invalid verification code")
+		return
+	}
+
+	// Disable MFA
+	if err := h.db.UpdateUserMFA(r.Context(), user.ID, false, nil, nil); err != nil {
+		h.log.Error("failed to disable MFA", "error", err)
+		h.writeError(w, http.StatusInternalServerError, "internal_error", "Failed to disable MFA")
+		return
+	}
+
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"disabled": true,
 		"message":  "MFA disabled successfully",

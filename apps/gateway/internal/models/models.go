@@ -15,6 +15,9 @@ type User struct {
 	PasswordHash string    `json:"-"` // Never expose
 	Role         string    `json:"role"`
 	Active       bool      `json:"active"`
+	MFAEnabled   bool      `json:"mfa_enabled"`
+	MFASecret    *string   `json:"-"` // Never expose
+	BackupCodes  []string  `json:"-"` // Never expose
 	CreatedAt    time.Time `json:"created_at"`
 }
 

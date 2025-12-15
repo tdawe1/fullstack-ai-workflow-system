@@ -468,13 +468,14 @@ func (h *Handler) GetDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	completedCount, _ := h.db.CountCompletedTasks(r.Context(), projectID)
+	activeRuns, _ := h.db.CountActiveRuns(r.Context(), projectID)
 
 	h.writeJSON(w, http.StatusOK, models.DashboardResponse{
 		Project:        *project,
 		Tasks:          tasks,
 		TotalTasks:     len(tasks),
 		CompletedTasks: completedCount,
-		ActiveRuns:     0, // TODO: Get from workers
+		ActiveRuns:     activeRuns,
 		Artifacts:      []map[string]interface{}{},
 	})
 }

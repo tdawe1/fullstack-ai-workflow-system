@@ -60,6 +60,9 @@ class User(Base):
     password_hash = Column(String(), nullable=False)
     role = Column(String(), nullable=False, server_default="user")
     active = Column(Boolean(), nullable=False, server_default="true")
+    mfa_enabled = Column(Boolean(), nullable=False, server_default="false")
+    mfa_secret = Column(String(), nullable=True)
+    backup_codes = Column(JSONB(astext_type=Text()), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 

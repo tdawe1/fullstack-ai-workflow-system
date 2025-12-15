@@ -113,6 +113,42 @@ func (db *DB) GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, erro
 	return &user, nil
 }
 
+// UpdateUserMFA updates the MFA settings for a user.
+func (db *DB) UpdateUserMFA(ctx context.Context, userID uuid.UUID, enabled bool, secret *string, backupCodes []string) error {
+	query := `
+		UPDATE users
+		SET mfa_enabled = $2, mfa_secret = $3, backup_codes = $4, updated_at = NOW()
+		WHERE id = $1
+	`
+	_, err := db.pool.Exec(ctx, query, userID, enabled, secret, backupCodes)
+	return err
+}
+
+// GetUserMFA retrieves MFA settings for a user.
+func (db *DB) GetUserMFA(ctx context.Context, userID uuid.UUID) (enabled bool, secret *string, backupCodes []string, err error) {
+	query := `
+		SELECT mfa_enabled, mfa_secret, backup_codes
+		FROM users WHERE id = $1
+	`
+	err = db.pool.QueryRow(ctx, query, userID).Scan(&enabled, &secret, &backupCodes)
+	return
+}
+
+// LinkOAuthAccount links an OAuth provider account to a user.
+func (db *DB) LinkOAuthAccount(ctx context.Context, userID uuid.UUID, provider, providerUserID, email, accessToken, refreshToken string) error {
+	query := `
+		INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_email, access_token, refresh_token, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+		ON CONFLICT (provider, provider_user_id) DO UPDATE
+		SET access_token = EXCLUDED.access_token, refresh_token = EXCLUDED.refresh_token, updated_at = NOW()
+	`
+	_, err := db.pool.Exec(ctx, query,
+		uuid.New(), userID, provider, providerUserID, email,
+		accessToken, refreshToken,
+	)
+	return err
+}
+
 // ---- Project Queries ----
 
 // CreateProject inserts a new project into the database.
@@ -331,6 +367,18 @@ func (db *DB) UpdateTask(ctx context.Context, task *models.Task) error {
 // CountCompletedTasks counts completed tasks for a project.
 func (db *DB) CountCompletedTasks(ctx context.Context, projectID uuid.UUID) (int, error) {
 	query := `SELECT COUNT(*) FROM tasks WHERE project_id = $1 AND status = 'completed'`
+	var count int
+	err := db.pool.QueryRow(ctx, query, projectID).Scan(&count)
+	return count, err
+}
+
+// CountActiveRuns counts currently running crew runs for a project.
+func (db *DB) CountActiveRuns(ctx context.Context, projectID uuid.UUID) (int, error) {
+	query := `
+		SELECT COUNT(*) FROM crew_runs cr
+		JOIN tasks t ON t.crew_run_id = cr.id
+		WHERE t.project_id = $1 AND cr.status = 'running'
+	`
 	var count int
 	err := db.pool.QueryRow(ctx, query, projectID).Scan(&count)
 	return count, err
