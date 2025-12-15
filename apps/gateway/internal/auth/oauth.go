@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
 	"golang.org/x/oauth2/google"
@@ -267,29 +269,85 @@ func (p *GitHubProvider) fetchPrimaryEmail(client *http.Client) (string, error) 
 
 // ---- State Store ----
 
-// OAuthStateStore stores OAuth state tokens temporarily.
+// OAuthStateStore stores OAuth state tokens in Redis for persistence and thread-safety.
+// Falls back to in-memory if Redis is not available.
 type OAuthStateStore struct {
-	states map[string]time.Time
+	redis    *redis.Client
+	fallback map[string]time.Time
+	mu       sync.RWMutex // Only used for fallback
 }
 
 // NewOAuthStateStore creates a new state store.
+// If redisURL is provided, uses Redis; otherwise falls back to in-memory.
 func NewOAuthStateStore() *OAuthStateStore {
 	return &OAuthStateStore{
-		states: make(map[string]time.Time),
+		fallback: make(map[string]time.Time),
 	}
 }
 
-// Store saves a state token.
-func (s *OAuthStateStore) Store(state string) {
-	s.states[state] = time.Now().Add(10 * time.Minute)
+// SetRedis configures the Redis client for the state store.
+func (s *OAuthStateStore) SetRedis(client *redis.Client) {
+	s.redis = client
 }
 
-// Validate checks and removes a state token.
+// Store saves a state token with 10 minute expiration.
+func (s *OAuthStateStore) Store(state string) {
+	ctx := context.Background()
+	ttl := 10 * time.Minute
+
+	// Use Redis if available
+	if s.redis != nil {
+		key := "oauth_state:" + state
+		err := s.redis.Set(ctx, key, "1", ttl).Err()
+		if err == nil {
+			return
+		}
+		// Fall through to in-memory on error
+	}
+
+	// Fallback to in-memory
+	s.mu.Lock()
+	s.fallback[state] = time.Now().Add(ttl)
+	s.mu.Unlock()
+}
+
+// Validate checks and removes a state token. Returns true if valid.
 func (s *OAuthStateStore) Validate(state string) bool {
-	exp, ok := s.states[state]
+	ctx := context.Background()
+
+	// Try Redis first
+	if s.redis != nil {
+		key := "oauth_state:" + state
+		result, err := s.redis.GetDel(ctx, key).Result()
+		if err == nil && result == "1" {
+			return true
+		}
+		if err != nil && err != redis.Nil {
+			// Log error but fall through to in-memory check
+		}
+	}
+
+	// Fallback to in-memory
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	exp, ok := s.fallback[state]
 	if !ok {
 		return false
 	}
-	delete(s.states, state)
+	delete(s.fallback, state)
 	return time.Now().Before(exp)
+}
+
+// Cleanup removes expired states from the in-memory fallback.
+func (s *OAuthStateStore) Cleanup() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	for state, exp := range s.fallback {
+		if now.After(exp) {
+			delete(s.fallback, state)
+		}
+	}
 }

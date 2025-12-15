@@ -92,12 +92,13 @@ func main() {
 
 	// Initialize events service
 	var eventsService *events.Service
+	var redisClient *redis.Client
 	if cfg.RedisURL != "" {
 		opt, err := redis.ParseURL(cfg.RedisURL)
 		if err != nil {
 			log.Error("failed to parse redis url", "error", err)
 		} else {
-			redisClient := redis.NewClient(opt)
+			redisClient = redis.NewClient(opt)
 			eventsService = events.New(redisClient)
 			log.Info("events service initialized")
 		}
@@ -107,6 +108,10 @@ func main() {
 	h := handlers.New(cfg, database, authService, eventsService, log)
 	h.SetOAuth(oauthManager)
 	h.SetSessions(sessionManager)
+	if redisClient != nil {
+		h.SetOAuthStateRedis(redisClient)
+		log.Info("OAuth state store connected to Redis")
+	}
 
 	// Initialize router
 	r := chi.NewRouter()

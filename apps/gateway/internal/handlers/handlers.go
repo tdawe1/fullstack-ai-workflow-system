@@ -17,6 +17,7 @@ import (
 	"github.com/kyros-praxis/gateway/internal/db"
 	"github.com/kyros-praxis/gateway/internal/events"
 	"github.com/kyros-praxis/gateway/internal/models"
+	"github.com/redis/go-redis/v9"
 )
 
 // Handler holds dependencies for HTTP handlers.
@@ -75,6 +76,13 @@ func (h *Handler) SetOAuth(oauth *auth.OAuthManager) {
 // SetSessions sets the session manager.
 func (h *Handler) SetSessions(sessions *auth.SessionManager) {
 	h.sessions = sessions
+}
+
+// SetOAuthStateRedis sets the Redis client for OAuth state persistence.
+func (h *Handler) SetOAuthStateRedis(client *redis.Client) {
+	if client != nil {
+		h.oauthStates.SetRedis(client)
+	}
 }
 
 // ---- Helper Functions ----
@@ -236,9 +244,20 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user
+	// Get user - timing attack mitigation: always check password even if user not found
 	user, err := h.db.GetUserByEmail(r.Context(), req.Email)
-	if err != nil || !auth.CheckPassword(req.Password, user.PasswordHash) {
+
+	// Use a fake hash if user not found to ensure constant-time response
+	// This prevents attackers from detecting valid emails via response timing
+	passwordHash := ""
+	if user != nil {
+		passwordHash = user.PasswordHash
+	} else {
+		// Fake bcrypt hash (will never match, but takes same time to verify)
+		passwordHash = "$2a$10$XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+	}
+
+	if err != nil || !auth.CheckPassword(req.Password, passwordHash) {
 		h.writeError(w, http.StatusUnauthorized, "invalid_credentials", "Incorrect email or password")
 		return
 	}

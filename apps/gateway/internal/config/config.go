@@ -59,6 +59,9 @@ type Config struct {
 
 	// MFA
 	MFAIssuer string
+
+	// Security - encryption for sensitive tokens at rest
+	OAuthEncryptionKey string // 32-byte hex-encoded key for AES-256-GCM
 }
 
 // Load reads configuration from environment variables with defaults.
@@ -116,6 +119,9 @@ func Load() *Config {
 
 		// MFA
 		MFAIssuer: getEnv("MFA_ISSUER", "FullstackAIWorkflow"),
+
+		// Security
+		OAuthEncryptionKey: getEnv("OAUTH_ENCRYPTION_KEY", ""), // Generate with: openssl rand -hex 32
 	}
 }
 
