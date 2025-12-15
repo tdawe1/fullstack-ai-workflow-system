@@ -3,6 +3,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -226,23 +227,53 @@ func (db *DB) DeleteProject(ctx context.Context, id uuid.UUID) error {
 
 // ---- Task Queries ----
 
-// CreateTask inserts a new task into the database.
+// CreateTask inserts a new task into the database and publishes a creation event.
 func (db *DB) CreateTask(ctx context.Context, task *models.Task) error {
+	tx, err := db.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
 	query := `
-		INSERT INTO tasks (id, project_id, title, description, priority, status, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO tasks (id, project_id, title, description, priority, status, dependencies, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
-	_, err := db.pool.Exec(ctx, query,
+	_, err = tx.Exec(ctx, query,
 		task.ID, task.ProjectID, task.Title, task.Description,
-		task.Priority, task.Status, task.CreatedAt,
+		task.Priority, task.Status, task.Dependencies, task.CreatedAt, task.UpdatedAt,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Publish event
+	eventPayload := map[string]interface{}{
+		"task_id": task.ID.String(),
+		"title":   task.Title,
+	}
+	payloadBytes, err := json.Marshal(eventPayload)
+	if err != nil {
+		// Should not happen with simple map
+		return err
+	}
+
+	eventQuery := `
+		INSERT INTO memory_events (project_id, event_type, payload, published_at)
+		VALUES ($1, $2, $3, $4)
+	`
+	_, err = tx.Exec(ctx, eventQuery, task.ProjectID, "task_created", payloadBytes, task.CreatedAt)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
 
 // ListTasksByProject retrieves all tasks for a project.
 func (db *DB) ListTasksByProject(ctx context.Context, projectID uuid.UUID) ([]models.Task, error) {
 	query := `
-		SELECT id, project_id, title, description, priority, status, created_at
+		SELECT id, project_id, title, description, priority, status, crew_run_id, dependencies, created_at, updated_at
 		FROM tasks WHERE project_id = $1
 		ORDER BY created_at ASC
 	`
@@ -257,7 +288,7 @@ func (db *DB) ListTasksByProject(ctx context.Context, projectID uuid.UUID) ([]mo
 		var t models.Task
 		if err := rows.Scan(
 			&t.ID, &t.ProjectID, &t.Title, &t.Description,
-			&t.Priority, &t.Status, &t.CreatedAt,
+			&t.Priority, &t.Status, &t.CrewRunID, &t.Dependencies, &t.CreatedAt, &t.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -270,13 +301,13 @@ func (db *DB) ListTasksByProject(ctx context.Context, projectID uuid.UUID) ([]mo
 // GetTaskByID retrieves a task by ID.
 func (db *DB) GetTaskByID(ctx context.Context, id uuid.UUID) (*models.Task, error) {
 	query := `
-		SELECT id, project_id, title, description, priority, status, created_at
+		SELECT id, project_id, title, description, priority, status, crew_run_id, dependencies, created_at, updated_at
 		FROM tasks WHERE id = $1
 	`
 	var task models.Task
 	err := db.pool.QueryRow(ctx, query, id).Scan(
 		&task.ID, &task.ProjectID, &task.Title, &task.Description,
-		&task.Priority, &task.Status, &task.CreatedAt,
+		&task.Priority, &task.Status, &task.CrewRunID, &task.Dependencies, &task.CreatedAt, &task.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err

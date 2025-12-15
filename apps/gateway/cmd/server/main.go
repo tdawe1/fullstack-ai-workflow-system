@@ -146,6 +146,14 @@ func main() {
 		r.With(authService.RequireAuth).Post("/{id}/tasks", h.CreateTask)
 		r.Get("/{id}/tasks", h.ListTasks)
 		r.With(authService.RequireAuth).Get("/{id}/dashboard", h.GetDashboard)
+
+		// Worker proxy routes (Workflow execution)
+		r.With(authService.RequireAuth).Post("/{id}/generate", h.ProxyWorker)
+		r.With(authService.RequireAuth).Post("/{id}/approve", h.ProxyWorker)
+		r.With(authService.RequireAuth).Post("/{id}/regenerate", h.ProxyWorker)
+		r.With(authService.RequireAuth).Get("/{id}/specification", h.ProxyWorker)
+		r.With(authService.RequireAuth).Get("/{id}/code", h.ProxyWorker)
+		r.With(authService.RequireAuth).Get("/{id}/status", h.ProxyWorker)
 	})
 
 	// Admin routes

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -26,10 +28,29 @@ type Handler struct {
 	sessions    *auth.SessionManager
 	validate    *validator.Validate
 	log         *slog.Logger
+	workerProxy *httputil.ReverseProxy
 }
 
 // New creates a new Handler.
 func New(cfg *config.Config, database *db.DB, authService *auth.Auth, log *slog.Logger) *Handler {
+	// Initialize worker proxy
+	target, err := url.Parse(cfg.WorkerBaseURL)
+	var proxy *httputil.ReverseProxy
+	if err != nil {
+		log.Error("failed to parse worker base URL", "error", err)
+	} else {
+		proxy = httputil.NewSingleHostReverseProxy(target)
+		// Modify Director to handle path correctly if needed, generally default is fine for direct mapping
+		originalDirector := proxy.Director
+		proxy.Director = func(req *http.Request) {
+			originalDirector(req)
+			// Don't overwrite Host if you want to respect the target's virtual host,
+			// but for internal docker networking, preserving original Host or setting to target is usually fine.
+			// Let's set it to target host to be safe for some servers.
+			req.Host = target.Host
+		}
+	}
+
 	return &Handler{
 		cfg:         cfg,
 		db:          database,
@@ -39,6 +60,7 @@ func New(cfg *config.Config, database *db.DB, authService *auth.Auth, log *slog.
 		sessions:    nil, // Set via SetSessions
 		validate:    validator.New(),
 		log:         log,
+		workerProxy: proxy,
 	}
 }
 
@@ -369,14 +391,17 @@ func (h *Handler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		priority = "P2"
 	}
 
+	now := time.Now().UTC()
 	task := &models.Task{
-		ID:          uuid.New(),
-		ProjectID:   projectID,
-		Title:       req.Title,
-		Description: req.Description,
-		Priority:    priority,
-		Status:      "queued",
-		CreatedAt:   time.Now().UTC(),
+		ID:           uuid.New(),
+		ProjectID:    projectID,
+		Title:        req.Title,
+		Description:  req.Description,
+		Priority:     priority,
+		Status:       "queued",
+		Dependencies: req.Dependencies,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 
 	if err := h.db.CreateTask(r.Context(), task); err != nil {

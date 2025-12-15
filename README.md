@@ -56,10 +56,10 @@ A production-ready platform for orchestrating AI agents to generate, review, and
 Unified provider abstraction supporting:
 | Provider | Models | Auth Method |
 |----------|--------|-------------|
-| OpenRouter | GPT-4, Claude, Llama | API Key |
-| Google Vertex AI | Gemini 1.5 Pro | Service Account |
-| Amazon Bedrock | Claude 3, Titan | IAM Role |
-| Microsoft Azure | GPT-4o | API Key + Endpoint |
+| OpenRouter | GPT-5.2, Claude 4.5, Llama | API Key |
+| Google Vertex AI | Gemini 3 Pro | Service Account |
+| Amazon Bedrock | Claude, Titan | IAM Role |
+| Microsoft Azure | GPT | API Key + Endpoint |
 
 ### Real-Time Communication
 - **SSE (Server-Sent Events)**: Live workflow progress updates

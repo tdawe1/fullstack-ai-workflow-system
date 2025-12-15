@@ -31,13 +31,16 @@ type Project struct {
 
 // Task represents a task within a project.
 type Task struct {
-	ID          uuid.UUID `json:"id"`
-	ProjectID   uuid.UUID `json:"project_id"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Priority    string    `json:"priority"`
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID           uuid.UUID  `json:"id"`
+	ProjectID    uuid.UUID  `json:"project_id"`
+	Title        string     `json:"title"`
+	Description  string     `json:"description"`
+	Priority     string     `json:"priority"`
+	Status       string     `json:"status"`
+	CrewRunID    *uuid.UUID `json:"crew_run_id,omitempty"`
+	Dependencies []string   `json:"dependencies,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 // ---- Request Types ----
@@ -75,9 +78,10 @@ type UpdateProjectRequest struct {
 
 // CreateTaskRequest is the request body for creating a task.
 type CreateTaskRequest struct {
-	Title       string `json:"title" validate:"required,min=1,max=255"`
-	Description string `json:"description"`
-	Priority    string `json:"priority" validate:"omitempty,oneof=P0 P1 P2 P3"`
+	Title        string   `json:"title" validate:"required,min=1,max=255"`
+	Description  string   `json:"description"`
+	Priority     string   `json:"priority" validate:"omitempty,oneof=P0 P1 P2 P3"`
+	Dependencies []string `json:"dependencies"`
 }
 
 // UpdateTaskRequest is the request body for updating a task.
