@@ -42,7 +42,9 @@ class WorkflowPipeline:
         project_id: str,
         user_prompt: str,
         approved_spec: Optional[Dict] = None,
-        iteration: int = 1
+        iteration: int = 1,
+        user_id: Optional[str] = None,
+        crew_id: str = "workflow-pipeline"
     ) -> Dict[str, Any]:
         """
         Execute full multi-agent workflow (PRD-compliant).
@@ -52,6 +54,8 @@ class WorkflowPipeline:
             user_prompt: User's detailed prompt
             approved_spec: If provided, skip planner and use this spec
             iteration: Current iteration number (for refinements)
+            user_id: Optional user ID (for tracking who initiated the workflow)
+            crew_id: Crew/agent configuration ID (default: workflow-pipeline)
             
         Returns:
             Workflow result containing all outputs and status
@@ -61,7 +65,13 @@ class WorkflowPipeline:
         
         # Create CrewRun record to satisfy Foreign Key constraints
         try:
-            await self._create_crew_run(workflow_id, project_id, user_prompt)
+            await self._create_crew_run(
+                workflow_id=workflow_id,
+                project_id=project_id,
+                user_prompt=user_prompt,
+                user_id=user_id,
+                crew_id=crew_id
+            )
         except Exception as e:
             logger.error(f"Failed to create CrewRun record: {e}")
             return {
@@ -463,57 +473,76 @@ Please update the implementation based on the refinement notes.
         code_files: List[Dict],
         test_files: List[Dict]
     ):
-        """Store generated artifacts in database."""
+        """Store generated artifacts in database with transactional integrity.
+        
+        All artifacts are stored atomically - if any fails, none are committed.
+        """
         async with AsyncSessionLocal() as session:
-            # Store code files
-            for file_obj in code_files:
-                artifact = Artifact(
-                    id=str(uuid4()),
-                    project_id=project_id,
-                    name=file_obj.get("path", "unknown"),
-                    type="code",
-                    content=file_obj.get("content", ""),
-                    meta={
-                        "description": file_obj.get("description", ""),
-                        "generated_by": "coder_agent"
-                    },
-                    integrated=False
-                )
-                session.add(artifact)
-            
-            # Store test files
-            for test_obj in test_files:
-                artifact = Artifact(
-                    id=str(uuid4()),
-                    project_id=project_id,
-                    name=test_obj.get("file", "unknown"),
-                    type="test",
-                    content=test_obj.get("content", ""),
-                    meta={
-                        "description": test_obj.get("description", ""),
-                        "generated_by": "tester_agent"
-                    },
-                    integrated=False
-                )
-                session.add(artifact)
-            
-            await session.commit()
-            logger.info(f"Stored {len(code_files)} code files and {len(test_files)} test files")
+            try:
+                # Store code files
+                for file_obj in code_files:
+                    artifact = Artifact(
+                        id=str(uuid4()),
+                        project_id=project_id,
+                        name=file_obj.get("path", "unknown"),
+                        type="code",
+                        content=file_obj.get("content", ""),
+                        meta={
+                            "description": file_obj.get("description", ""),
+                            "generated_by": "coder_agent"
+                        },
+                        integrated=False
+                    )
+                    session.add(artifact)
+                
+                # Store test files
+                for test_obj in test_files:
+                    artifact = Artifact(
+                        id=str(uuid4()),
+                        project_id=project_id,
+                        name=test_obj.get("file", "unknown"),
+                        type="test",
+                        content=test_obj.get("content", ""),
+                        meta={
+                            "description": test_obj.get("description", ""),
+                            "generated_by": "tester_agent"
+                        },
+                        integrated=False
+                    )
+                    session.add(artifact)
+                
+                await session.commit()
+                logger.info(f"Stored {len(code_files)} code files and {len(test_files)} test files")
+                
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Failed to store artifacts, transaction rolled back: {e}")
+                raise
 
     async def _create_crew_run(
         self,
         workflow_id: str,
         project_id: str,
-        user_prompt: str
+        user_prompt: str,
+        user_id: Optional[str] = None,
+        crew_id: str = "workflow-pipeline"
     ):
-        """Create initial CrewRun record."""
+        """Create initial CrewRun record.
+        
+        Args:
+            workflow_id: Unique workflow run ID
+            project_id: Associated project ID
+            user_prompt: The user's original prompt
+            user_id: ID of the user who initiated the workflow (or None if system-initiated)
+            crew_id: Identifier for the crew/agent configuration used
+        """
         async with AsyncSessionLocal() as session:
             crew_run = CrewRun(
                 id=workflow_id,
-                crew_id="default",
+                crew_id=crew_id,
                 status="running",
                 input={"user_prompt": user_prompt, "project_id": project_id},
-                user_id=project_id  # Using project_id as user_id proxy if not provided
+                user_id=user_id  # Now properly nullable, not using project_id as proxy
             )
             session.add(crew_run)
             await session.commit()
