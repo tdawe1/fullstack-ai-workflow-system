@@ -10,24 +10,24 @@ A production-ready platform for orchestrating AI agents to generate, review, and
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         Frontend (React)                         │
-│                    Real-time Dashboard + Terminal                │
+│                         Frontend (React)                        │
+│                    Real-time Dashboard + Terminal               │
 └─────────────────────────┬───────────────────────────────────────┘
                           │ REST / SSE / WebSocket
 ┌─────────────────────────▼───────────────────────────────────────┐
-│                      API Gateway (Go)                            │
-│     High-performance routing • JWT Auth • Rate Limiting          │
+│                      API Gateway (Go)                           │
+│     High-performance routing • JWT Auth • Rate Limiting         │
 └─────────────────────────┬───────────────────────────────────────┘
                           │ HTTP
 ┌─────────────────────────▼───────────────────────────────────────┐
 │                     Worker Service (Python)                     │
 │                                                                 │
 │  SUPERVISORY   ┌──────────┐     ┌──────────┐                    │
-│  LAYER         │ Architect│ ⟷  │ Planner  │   iterate until   │
+│  LAYER         │ Architect│ <-> │ Planner  │   iterate until    │
 │                └────┬─────┘     └────┬─────┘   consensus        │
 │                     │                │                          │
 │  EXECUTION    ┌─────▼────┐  ┌───────▼──┐  ┌──────────┐          │
-│  LAYER        │Orchestrat│─▶│  Coder   │─▶│  Tester  │          │
+│  LAYER        │Orchestrat│->│  Coder   │->│  Tester  │          │
 │               └──────────┘  └──────────┘  └────┬─────┘          │
 │                                                │                │
 │  INTEGRATION  ┌────────────────────────────────▼──────────────┐ │
@@ -37,7 +37,7 @@ A production-ready platform for orchestrating AI agents to generate, review, and
 └─────────────────────────┬───────────────────────────────────────┘
                           │
 ┌─────────────────────────▼───────────────────────────────────────┐
-│                     Data Layer                                   │
+│                     Data Layer                                  │
 │     PostgreSQL (state) • Redis (cache) • S3 (artifacts)         │
 └─────────────────────────────────────────────────────────────────┘
 ```
