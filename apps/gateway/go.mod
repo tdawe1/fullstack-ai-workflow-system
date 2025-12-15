@@ -14,7 +14,7 @@ require (
 	github.com/redis/go-redis/v9 v9.17.2
 	go.opentelemetry.io/otel v1.39.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.32.0
-	go.opentelemetry.io/otel/sdk v1.32.0
+	go.opentelemetry.io/otel/sdk v1.39.0
 	go.opentelemetry.io/otel/trace v1.39.0
 	golang.org/x/crypto v0.46.0
 	golang.org/x/oauth2 v0.30.0
