@@ -79,12 +79,12 @@ jobs:
       - name: Run migrations
         run: alembic upgrade head
         env:
-          DATABASE_URL: postgres://kyros:kyros@localhost:5432/kyros
+          DATABASE_URL: postgresql+asyncpg://kyros:kyros@localhost:5432/kyros
 
       - name: Run tests
         run: pytest -v --cov=app --cov-report=xml
         env:
-          DATABASE_URL: postgres://kyros:kyros@localhost:5432/kyros
+          DATABASE_URL: postgresql+asyncpg://kyros:kyros@localhost:5432/kyros
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

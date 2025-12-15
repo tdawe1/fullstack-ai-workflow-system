@@ -82,7 +82,9 @@ const maxRequestBodySize = 1 << 20
 func (h *Handler) writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		h.log.Error("failed to encode response", "error", err)
+	}
 }
 
 func (h *Handler) writeError(w http.ResponseWriter, status int, err string, message string) {

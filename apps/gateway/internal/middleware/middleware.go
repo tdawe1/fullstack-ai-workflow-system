@@ -104,7 +104,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte(`{"error":"rate_limit_exceeded","message":"Too many requests"}`))
+			_, _ = w.Write([]byte(`{"error":"rate_limit_exceeded","message":"Too many requests"}`))
 			return
 		}
 
@@ -157,7 +157,7 @@ func Recoverer(log *slog.Logger) func(http.Handler) http.Handler {
 					log.Error("panic recovered", "error", err, "path", r.URL.Path)
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusInternalServerError)
-					w.Write([]byte(`{"error":"internal_error","message":"An unexpected error occurred"}`))
+					_, _ = w.Write([]byte(`{"error":"internal_error","message":"An unexpected error occurred"}`))
 				}
 			}()
 			next.ServeHTTP(w, r)

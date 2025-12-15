@@ -233,7 +233,7 @@ func (db *DB) CreateTask(ctx context.Context, task *models.Task) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	query := `
 		INSERT INTO tasks (id, project_id, title, description, priority, status, dependencies, created_at, updated_at)
