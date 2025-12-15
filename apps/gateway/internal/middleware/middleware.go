@@ -116,6 +116,108 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+// MFALimiter implements aggressive rate limiting for MFA verification endpoints.
+// Limits to 5 attempts per 5 minutes per IP to prevent brute-force attacks on TOTP.
+type MFALimiter struct {
+	attempts       map[string][]time.Time
+	mu             sync.RWMutex
+	maxAttempts    int           // Max attempts in window
+	windowDuration time.Duration // Time window
+	stopCleanup    chan struct{}
+}
+
+// NewMFALimiter creates a new MFA-specific rate limiter.
+// Default: 5 attempts per 5 minutes.
+func NewMFALimiter() *MFALimiter {
+	ml := &MFALimiter{
+		attempts:       make(map[string][]time.Time),
+		maxAttempts:    5,
+		windowDuration: 5 * time.Minute,
+		stopCleanup:    make(chan struct{}),
+	}
+	go ml.cleanupLoop()
+	return ml
+}
+
+func (ml *MFALimiter) cleanupLoop() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			ml.cleanup()
+		case <-ml.stopCleanup:
+			return
+		}
+	}
+}
+
+func (ml *MFALimiter) cleanup() {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+
+	cutoff := time.Now().Add(-ml.windowDuration)
+	for ip, times := range ml.attempts {
+		filtered := times[:0]
+		for _, t := range times {
+			if t.After(cutoff) {
+				filtered = append(filtered, t)
+			}
+		}
+		if len(filtered) == 0 {
+			delete(ml.attempts, ip)
+		} else {
+			ml.attempts[ip] = filtered
+		}
+	}
+}
+
+// Stop stops the cleanup goroutine.
+func (ml *MFALimiter) Stop() {
+	close(ml.stopCleanup)
+}
+
+// Middleware returns an HTTP middleware that applies MFA-specific rate limiting.
+func (ml *MFALimiter) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		clientIP := r.RemoteAddr
+		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+			clientIP = forwarded
+		}
+
+		ml.mu.Lock()
+		now := time.Now()
+		cutoff := now.Add(-ml.windowDuration)
+
+		// Clean old attempts for this IP
+		attempts := ml.attempts[clientIP]
+		filtered := attempts[:0]
+		for _, t := range attempts {
+			if t.After(cutoff) {
+				filtered = append(filtered, t)
+			}
+		}
+		ml.attempts[clientIP] = filtered
+
+		// Check limit - 5 attempts per 5 minutes
+		if len(filtered) >= ml.maxAttempts {
+			ml.mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "300")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":"mfa_rate_limit","message":"Too many MFA attempts. Try again in 5 minutes."}`))
+			return
+		}
+
+		// Add current attempt
+		ml.attempts[clientIP] = append(ml.attempts[clientIP], now)
+		ml.mu.Unlock()
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // Logger returns an HTTP middleware that logs requests.
 func Logger(log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

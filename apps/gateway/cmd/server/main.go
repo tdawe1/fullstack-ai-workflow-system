@@ -139,10 +139,11 @@ func main() {
 		r.Get("/oauth/{provider}", h.OAuthStart)
 		r.Get("/oauth/{provider}/callback", h.OAuthCallback)
 
-		// MFA routes
+		// MFA routes - verify has aggressive rate limiting to prevent brute-force
+		mfaLimiter := middleware.NewMFALimiter()
 		r.With(authService.RequireAuth).Post("/mfa/setup", h.MFASetup)
 		r.With(authService.RequireAuth).Post("/mfa/enable", h.MFAEnable)
-		r.Post("/mfa/verify", h.MFAVerify)
+		r.With(mfaLimiter.Middleware).Post("/mfa/verify", h.MFAVerify)
 		r.With(authService.RequireAuth).Post("/mfa/disable", h.MFADisable)
 
 		// Session routes

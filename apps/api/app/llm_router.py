@@ -171,24 +171,31 @@ async def route_llm_request(
     router: LLMRouter,
     prompt: str,
     llm_providers: Dict[str, Any],
-    max_retries: int = 3
+    max_retries: int = 3,
+    timeout_seconds: float = 30.0
 ) -> Dict[str, Any]:
     """
-    Route request through providers with failover.
+    Route request through providers with failover, timeout, and exponential backoff.
     
     Args:
         router: LLM router instance
         prompt: The prompt to send
         llm_providers: Dict of provider instances
         max_retries: Maximum providers to try
+        timeout_seconds: Timeout per request (default 30s)
         
     Returns:
         Response from successful provider
+        
+    Raises:
+        Exception: If all providers fail
     """
+    import asyncio
+    
     tried = []
     last_error = None
     
-    for _ in range(max_retries):
+    for attempt in range(max_retries):
         provider_name = router.select_provider(exclude=tried)
         if not provider_name:
             break
@@ -201,9 +208,15 @@ async def route_llm_request(
         
         start = time.time()
         try:
-            result = await provider.generate(prompt)
+            # Apply timeout to prevent hanging on slow providers
+            result = await asyncio.wait_for(
+                provider.generate(prompt),
+                timeout=timeout_seconds
+            )
             latency = (time.time() - start) * 1000
             router.record_success(provider_name, latency)
+            
+            logger.info(f"LLM request succeeded: provider={provider_name}, latency={latency:.0f}ms")
             
             return {
                 "provider": provider_name,
@@ -211,9 +224,20 @@ async def route_llm_request(
                 "latency_ms": latency,
             }
             
+        except asyncio.TimeoutError:
+            logger.warning(f"Provider {provider_name} timed out after {timeout_seconds}s")
+            router.record_error(provider_name)
+            last_error = TimeoutError(f"Provider {provider_name} timed out")
+            
         except Exception as e:
             logger.warning(f"Provider {provider_name} failed: {e}")
             router.record_error(provider_name)
             last_error = e
+        
+        # Exponential backoff between retries (100ms, 200ms, 400ms, ...)
+        if attempt < max_retries - 1:
+            backoff = 0.1 * (2 ** attempt)
+            logger.debug(f"Retrying in {backoff:.1f}s...")
+            await asyncio.sleep(backoff)
     
-    raise Exception(f"All providers failed. Last error: {last_error}")
+    raise Exception(f"All LLM providers failed after {len(tried)} attempts. Last error: {last_error}")

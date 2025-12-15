@@ -13,8 +13,6 @@ from ..agents.planner import run_planner, validate_specification
 from ..agents.coder import run_coder, validate_code_output, parse_code_output
 from ..agents.tester import run_tester, parse_test_output, has_blocking_issues
 from ..prompt_processor import prompt_processor
-from ..agents.tester import run_tester, parse_test_output, has_blocking_issues
-from ..prompt_processor import prompt_processor
 from ..db.models import Artifact, WorkflowStage, CrewRun
 from ..db.session import AsyncSessionLocal
 from ..memory.shared_memory import shared_memory
@@ -475,7 +473,7 @@ Please update the implementation based on the refinement notes.
                     name=file_obj.get("path", "unknown"),
                     type="code",
                     content=file_obj.get("content", ""),
-                    metadata={
+                    meta={
                         "description": file_obj.get("description", ""),
                         "generated_by": "coder_agent"
                     },
@@ -491,7 +489,7 @@ Please update the implementation based on the refinement notes.
                     name=test_obj.get("file", "unknown"),
                     type="test",
                     content=test_obj.get("content", ""),
-                    metadata={
+                    meta={
                         "description": test_obj.get("description", ""),
                         "generated_by": "tester_agent"
                     },

@@ -474,6 +474,6 @@ async def terminal_websocket(websocket: WebSocket, token: str = None):
         except Exception:
             pass  # Already closed
         
-        active_terminals.discard(terminal_id)
+        active_terminals.pop(terminal_id, None)
         logger.info(f"Terminal {terminal_id} disconnected (remaining: {len(active_terminals)})")
 
