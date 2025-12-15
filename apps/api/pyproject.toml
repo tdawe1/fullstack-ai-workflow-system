@@ -50,3 +50,9 @@ testpaths = [
     "tests",
 ]
 python_files = "test_*.py"
+
+[tool.ruff]
+select = ["E", "F"]
+ignore = []
+line-length = 120
+
