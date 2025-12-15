@@ -26,7 +26,8 @@ dependencies = [
     "crewai>=0.1.0",
     "pyyaml>=6.0",
     "redis>=5.0.0",
-    "httpx>=0.24.0"
+    "httpx>=0.24.0",
+    "email-validator>=2.0.0"
 ]
 
 [project.optional-dependencies]

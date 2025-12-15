@@ -37,6 +37,7 @@ jobs:
         with:
           files: apps/gateway/coverage.out
           flags: gateway
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   # Python Worker Tests
   workers:
@@ -91,6 +92,7 @@ jobs:
         with:
           files: apps/api/coverage.xml
           flags: workers
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   # Build Docker Images
   docker:
