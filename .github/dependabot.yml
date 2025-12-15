@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # Maintain GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Maintain Go modules for Gateway
+  - package-ecosystem: "gomod"
+    directory: "/apps/gateway"
+    schedule:
+      interval: "weekly"
+
+  # Maintain Python dependencies for API
+  - package-ecosystem: "pip"
+    directory: "/apps/api"
+    schedule:
+      interval: "weekly"
+
+  # Maintain NPM dependencies for Console
+  - package-ecosystem: "npm"
+    directory: "/apps/console"
+    schedule:
+      interval: "weekly"
