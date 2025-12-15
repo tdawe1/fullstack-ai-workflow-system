@@ -118,6 +118,7 @@ func main() {
 
 	// Middleware
 	r.Use(middleware.Recoverer(log))
+	r.Use(middleware.SecurityHeaders)
 	r.Use(middleware.Logger(log))
 	r.Use(middleware.NewRateLimiter(cfg.RateLimitRPM).Middleware)
 	r.Use(cors.Handler(cors.Options{

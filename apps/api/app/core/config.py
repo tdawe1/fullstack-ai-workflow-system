@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     
     # Terminal Settings
     MAX_TERMINAL_CONNECTIONS: int = Field(default=50, description="Maximum concurrent terminal connections")
+    TERMINAL_ENABLED: bool = Field(default=False, description="Enable terminal WebSocket endpoint (DANGEROUS - disabled by default)")
     
     # Workflow Settings
     MAX_CRITIC_ITERATIONS: int = Field(default=3, description="Maximum critic feedback iterations")

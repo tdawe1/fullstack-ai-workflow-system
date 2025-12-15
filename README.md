@@ -137,6 +137,30 @@ cd apps/api && uvicorn app.main:app --port 8002
 cd apps/console && npm run dev
 ```
 
+### Production Deployment
+
+> ⚠️ **Security Requirements** - The following environment variables MUST be configured for production:
+
+```bash
+# Required - Generate with: openssl rand -hex 32
+export JWT_SECRET_KEY="your-secure-64-char-hex-key"
+export OAUTH_ENCRYPTION_KEY="your-secure-64-char-hex-key"
+
+# Required - Set environment
+export KYROS_ENV="production"
+
+# Required - Use SSL for database
+export DATABASE_URL="postgres://user:pass@host:5432/db?sslmode=require"
+
+# Required - Redis for sessions
+export REDIS_URL="redis://host:6379"
+
+# Required - Update CORS
+export CORS_ALLOW_ORIGINS="https://your-domain.com"
+```
+
+> ⚠️ **Database Warning**: The default `sslmode=disable` is for development only. Production deployments MUST use `sslmode=require` or `sslmode=verify-full`.
+
 ## API Reference
 
 ### Authentication
